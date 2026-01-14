@@ -96,7 +96,7 @@ function loadCatalogs() {
 const catalogs = loadCatalogs();
 
 // Update dependencies in package.json
-function updateDependencies(deps, versionMapping) {
+function updateDependencies(deps, versionMapping, allowAlias = true) {
 	if (!deps) return deps;
 	const updated = {};
 	for (const [name, version] of Object.entries(deps)) {
@@ -136,7 +136,13 @@ function updateDependencies(deps, versionMapping) {
 			newVersion = actualVersion || version.replace('workspace:', '');
 		}
 
-		updated[newName] = newVersion;
+		const isInternal = nameMapping.has(name);
+
+		if (allowAlias && isInternal) {
+			updated[name] = `npm:${newName}@${newVersion}`;
+		} else {
+			updated[newName] = newVersion;
+		}
 	}
 	return updated;
 }
@@ -250,9 +256,9 @@ async function main() {
 			pkg.version = versionMapping.get(originalName) || pkg.version;
 
 			// Update dependencies with version mapping
-			pkg.dependencies = updateDependencies(pkg.dependencies, versionMapping);
-			pkg.devDependencies = updateDependencies(pkg.devDependencies, versionMapping);
-			pkg.peerDependencies = updateDependencies(pkg.peerDependencies, versionMapping);
+			pkg.dependencies = updateDependencies(pkg.dependencies, versionMapping, true);
+			pkg.devDependencies = updateDependencies(pkg.devDependencies, versionMapping, true);
+			pkg.peerDependencies = updateDependencies(pkg.peerDependencies, versionMapping, false);
 
 			writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 		}
