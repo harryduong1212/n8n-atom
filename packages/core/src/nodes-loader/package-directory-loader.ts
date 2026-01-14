@@ -24,7 +24,7 @@ export class PackageDirectoryLoader extends DirectoryLoader {
 		const nodeTypePrefix = this.packageJson.n8n?.nodeTypePrefix;
 		this.packageName = nodeTypePrefix ?? this.packageJson.name;
 		if (nodeTypePrefix) {
-			console.log(
+			this.logger.info(
 				`[NodeTypeLoader] Package: ${this.packageJson.name}, using nodeTypePrefix: ${nodeTypePrefix}`,
 			);
 		}
