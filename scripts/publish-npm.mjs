@@ -252,6 +252,23 @@ async function main() {
 			const originalName = pkg.name;
 			pkg.name = nameMapping.get(originalName) || pkg.name;
 
+			// Preserve original node type prefix for workflow compatibility
+			// This ensures node types remain as 'n8n-nodes-base.manualTrigger'
+			// even when published as '@atom8n/n8n-nodes-base'
+			if (originalName !== pkg.name) {
+				const isNodesPackage = pkg.n8n?.nodes || 
+					originalName === 'n8n-nodes-base' || 
+					originalName === '@n8n/n8n-nodes-langchain';
+				
+				if (isNodesPackage) {
+					if (!pkg.n8n) {
+						pkg.n8n = {};
+					}
+					pkg.n8n.nodeTypePrefix = originalName;
+					console.log(`  📎 [NodeTypePrefix] ${pkg.name} -> nodeTypePrefix: ${originalName}`);
+				}
+			}
+
 			// Update version
 			pkg.version = versionMapping.get(originalName) || pkg.version;
 
