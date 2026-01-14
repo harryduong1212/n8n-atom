@@ -6,8 +6,7 @@
     "create-node": "bin/create-node.cjs"
   },
   "files": [
-    "bin",
-    "dist"
+    "bin"
   ],
   "scripts": {
     "start": "node bin/create-node.cjs"
