@@ -20,8 +20,8 @@
 		"declaration": true,
 
 		"composite": true,
-		"declarationMap": true,
-		"sourceMap": true,
+		"declarationMap": false,
+		"sourceMap": false,
 
 		"lib": ["es2022", "dom", "dom.iterable"]
 	}

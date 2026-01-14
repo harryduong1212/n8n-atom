@@ -78,6 +78,6 @@ export class UuencodedPartData extends PartData {
 		const parts = data.split('\n'); // remove newline characters
 		const merged = parts.splice(1, parts.length - 4).join(''); // remove excess lines and join lines with empty string
 		const decoded = uuencode.decode(merged);
-		super(decoded);
+		super(Buffer.from(decoded));
 	}
 }

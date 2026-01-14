@@ -98,7 +98,10 @@ export class WorkflowBuilderService {
 		yield* service.chat(payload, user, abortSignal);
 	}
 
-	async getSessions(workflowId: string | undefined, user: IUser) {
+	async getSessions(
+		workflowId: string | undefined,
+		user: IUser,
+	): Promise<Awaited<ReturnType<AiWorkflowBuilderService['getSessions']>>> {
 		const service = await this.getService();
 		const sessions = await service.getSessions(workflowId, user);
 		return sessions;

@@ -10,7 +10,7 @@
   "scripts": {
     "prepare": "node scripts/prepare.mjs",
     "preinstall": "node scripts/block-npm-install.js",
-    "build": "turbo run build",
+    "build": "turbo run build --concurrency=1",
     "build:n8n": "node scripts/build-n8n.mjs",
     "build:deploy": "node scripts/build-n8n.mjs",
     "build:portable": "node scripts/build-n8n.mjs && node scripts/build-portable.mjs",
