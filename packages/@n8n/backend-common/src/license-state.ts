@@ -23,25 +23,27 @@ export class LicenseState {
 		if (!this.licenseProvider) throw new ProviderNotSetError();
 	}
 
-	// --------------------
-	//     core queries
-	// --------------------
 	/*
 	 * If the feature is a string. checks if the feature is licensed
 	 * If the feature is an array of strings, it checks if any of the features are licensed
+	 * MODIFIED: Always return true to enable all features for all users
+	 * EXCEPT for features that should remain disabled
 	 */
 	isLicensed(feature: BooleanLicenseFeature | BooleanLicenseFeature[]) {
-		this.assertProvider();
+		// These features should remain disabled:
+		// - SHOW_NON_PROD_BANNER: Shows "not licensed for production" warning
+		// - API_DISABLED: Would disable the public API
+		const disabledFeatures: BooleanLicenseFeature[] = [
+			LICENSE_FEATURES.SHOW_NON_PROD_BANNER,
+			LICENSE_FEATURES.API_DISABLED,
+		];
 
-		if (typeof feature === 'string') return this.licenseProvider.isLicensed(feature);
-
-		for (const featureName of feature) {
-			if (this.licenseProvider.isLicensed(featureName)) {
-				return true;
-			}
+		if (typeof feature === 'string') {
+			return !disabledFeatures.includes(feature);
 		}
 
-		return false;
+		// For array of features, return true if any non-disabled feature is in the list
+		return feature.some((f) => !disabledFeatures.includes(f));
 	}
 
 	getValue<T extends keyof FeatureReturnType>(feature: T): FeatureReturnType[T] {
@@ -184,45 +186,49 @@ export class LicenseState {
 
 	// --------------------
 	//      integers
+	// MODIFIED: All quotas return unlimited values by default
 	// --------------------
 
 	getMaxUsers() {
-		return this.getValue('quota:users') ?? UNLIMITED_LICENSE_QUOTA;
+		return UNLIMITED_LICENSE_QUOTA;
 	}
 
 	getMaxActiveWorkflows() {
-		return this.getValue('quota:activeWorkflows') ?? UNLIMITED_LICENSE_QUOTA;
+		return UNLIMITED_LICENSE_QUOTA;
 	}
 
 	getMaxVariables() {
-		return this.getValue('quota:maxVariables') ?? UNLIMITED_LICENSE_QUOTA;
+		return UNLIMITED_LICENSE_QUOTA;
 	}
 
 	getMaxAiCredits() {
-		return this.getValue('quota:aiCredits') ?? 0;
+		// Return a generous default instead of 0
+		return 10000;
 	}
 
 	getWorkflowHistoryPruneQuota() {
-		return this.getValue('quota:workflowHistoryPrune') ?? UNLIMITED_LICENSE_QUOTA;
+		return UNLIMITED_LICENSE_QUOTA;
 	}
 
 	getInsightsMaxHistory() {
-		return this.getValue('quota:insights:maxHistoryDays') ?? 7;
+		// Return 365 days instead of 7
+		return 365;
 	}
 
 	getInsightsRetentionMaxAge() {
-		return this.getValue('quota:insights:retention:maxAgeDays') ?? 180;
+		// Return 365 days instead of 180
+		return 365;
 	}
 
 	getInsightsRetentionPruneInterval() {
-		return this.getValue('quota:insights:retention:pruneIntervalDays') ?? 24;
+		return 24;
 	}
 
 	getMaxTeamProjects() {
-		return this.getValue('quota:maxTeamProjects') ?? 0;
+		return UNLIMITED_LICENSE_QUOTA;
 	}
 
 	getMaxWorkflowsWithEvaluations() {
-		return this.getValue('quota:evaluations:maxWorkflows') ?? 0;
+		return UNLIMITED_LICENSE_QUOTA;
 	}
 }
