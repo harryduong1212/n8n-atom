@@ -61,9 +61,12 @@ export function getDateRangesSelectQuery({
 	startDateTime: DateTime;
 	endDateTime: DateTime;
 }) {
-	const prevStartStr = prevStartDateTime.toSQL({ includeZone: false, includeOffset: false });
-	const startStr = startDateTime.toSQL({ includeZone: false, includeOffset: false });
-	const endStr = endDateTime.toSQL({ includeZone: false, includeOffset: false });
+	const prevStartStr = prevStartDateTime.toSQL({
+		includeZone: false,
+		includeOffset: false,
+	}) as string;
+	const startStr = startDateTime.toSQL({ includeZone: false, includeOffset: false }) as string;
+	const endStr = endDateTime.toSQL({ includeZone: false, includeOffset: false }) as string;
 
 	// Database-specific timestamp casting
 	// PostgreSQL requires explicit CAST or :: syntax for timestamp comparisons
