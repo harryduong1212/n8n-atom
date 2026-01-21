@@ -7,7 +7,7 @@ import svgLoader from 'vite-svg-loader';
 import istanbul from 'vite-plugin-istanbul';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { codecovVitePlugin } from '@codecov/vite-plugin';
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, rmSync } from 'fs';
 
 import { vitestConfig } from '@n8n/vitest-config/frontend';
 import icons from 'unplugin-icons/vite';
@@ -206,10 +206,13 @@ const plugins: UserConfig['plugins'] = [
 			const indexHtml = resolve(distDir, 'index.html');
 			// Only copy if build was successful (index.html exists)
 			if (existsSync(distDir) && existsSync(indexHtml)) {
-				// Ensure target directory exists
-				if (!existsSync(atomVscodeDistDir)) {
-					mkdirSync(atomVscodeDistDir, { recursive: true });
+				// Clean target directory before copying to prevent accumulation of old build artifacts
+				if (existsSync(atomVscodeDistDir)) {
+					rmSync(atomVscodeDistDir, { recursive: true, force: true });
+					console.log(`✓ Cleaned existing directory: ${atomVscodeDistDir}`);
 				}
+				// Ensure target directory exists
+				mkdirSync(atomVscodeDistDir, { recursive: true });
 				// Copy dist folder to n8n-atom-vscode/dist/editor-ui
 				cpSync(distDir, atomVscodeDistDir, { recursive: true, force: true });
 				console.log(`✓ Copied release build output to ${atomVscodeDistDir}`);
