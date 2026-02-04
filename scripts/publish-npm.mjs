@@ -303,7 +303,7 @@ async function main() {
 			try {
 				// Check if version already exists
 				if (checkVersionExists(pkgName, pkg.version)) {
-					console.log(`  ⏭️  ${pkgName}@${pkg.version} (already published)`);
+					console.log(`  ⏭️  ${pkgName}@${pkg.version} (already published) v2`);
 					skipCount++;
 					continue;
 				}
