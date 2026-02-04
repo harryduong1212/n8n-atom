@@ -335,14 +335,13 @@ async function main() {
 					}
 					failCount++;
 				}
-				// Check for common "already published" patterns
+				// Only skip as "already published" when npm explicitly says so (avoid treating other E403 e.g. permission/forbidden as skip)
 				else if (
 					fullError.includes('previously published') ||
-					(fullError.includes('E403') && !fullError.includes('EOTP')) ||
 					fullError.includes('You cannot publish over the previously published versions') ||
 					fullError.includes('cannot publish over existing version')
 				) {
-					console.log(`  ⏭️  ${pkgName}@${pkg.version} (already published)`);
+					console.log(`  ⏭️  ${pkgName}@${pkg.version} ${fullError}`);
 					skipCount++;
 				} else {
 					console.log(fullError);
