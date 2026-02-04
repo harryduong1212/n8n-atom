@@ -147,6 +147,17 @@ function updateDependencies(deps, versionMapping, allowAlias = true) {
 	return updated;
 }
 
+// Return only error lines from npm output (strip "npm notice" noise)
+function getErrorOnly(text) {
+	if (!text || !text.trim()) return '';
+	return text
+		.split('\n')
+		.filter((line) => !line.includes('npm notice'))
+		.filter((line) => line.trim().length > 0)
+		.join('\n')
+		.trim();
+}
+
 // Check if package version already exists on the public npm registry (so "already published" matches npmjs.com)
 const NPM_REGISTRY = 'https://registry.npmjs.org';
 function checkVersionExists(name, version) {
@@ -327,7 +338,8 @@ async function main() {
 				
 				// Check for 2FA OTP requirement
 				if (fullError.includes('EOTP') || fullError.includes('one-time password')) {
-					console.log(fullError);
+					const errMsg = getErrorOnly(fullError);
+					if (errMsg) console.log(`     ${errMsg.replace(/\n/g, '\n     ')}`);
 					console.log(`  ❌ ${pkgName}@${pkg.version} - 2FA OTP required`);
 					console.log(`     Run with --otp=CODE or set NPM_OTP environment variable`);
 					if (failCount === 0) {
@@ -341,11 +353,12 @@ async function main() {
 					fullError.includes('You cannot publish over the previously published versions') ||
 					fullError.includes('cannot publish over existing version')
 				) {
-					console.log(`  ⏭️  ${pkgName}@${pkg.version} ${fullError}`);
+					const errMsg = getErrorOnly(fullError);
+					console.log(`  ⏭️  ${pkgName}@${pkg.version} ${errMsg ? `\n     ${errMsg.replace(/\n/g, '\n     ')}` : ''}`);
 					skipCount++;
 				} else {
-					console.log(fullError);
-					// Show more detailed error - get the actual error line
+					const errMsg = getErrorOnly(fullError);
+					if (errMsg) console.log(`     ${errMsg.replace(/\n/g, '\n     ')}`);
 					const errorLines = fullError
 						.split('\n')
 						.filter(
@@ -355,7 +368,7 @@ async function main() {
 								line.includes('403') ||
 								line.includes('401') ||
 								line.includes('404') ||
-								line.trim().length > 0,
+								(line.trim().length > 0 && !line.includes('npm notice')),
 						);
 					const errorMsg = errorLines.slice(0, 3).join(' | ') || fullError.slice(0, 200);
 					console.log(`  ❌ ${pkgName}@${pkg.version} - ${errorMsg}`);
