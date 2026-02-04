@@ -269,7 +269,8 @@ export class License implements LicenseProvider {
 
 	/** @deprecated Use `LicenseState.isSharingLicensed` instead. */
 	isSharingEnabled() {
-		return this.isLicensed(LICENSE_FEATURES.SHARING);
+		// Disabled: avoid "credentials that are not shared with you" when opening/saving .n8n files
+		return false;
 	}
 
 	/** @deprecated Use `LicenseState.isLogStreamingLicensed` instead. */

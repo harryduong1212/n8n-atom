@@ -16,6 +16,7 @@ import { BadRequestError } from '@/errors/response-errors/bad-request.error';
 import { Publisher } from '@/scaling/pubsub/publisher.service';
 import { TypedEmitter } from '@/typed-emitter';
 
+import { ExtendedWebSocket } from '@/interfaces';
 import { validateOriginHeaders } from './origin-validator';
 import { PushConfig } from './push.config';
 import { SSEPush } from './sse.push';
@@ -151,7 +152,7 @@ export class Push extends TypedEmitter<PushEvents> {
 		}
 
 		if (req.ws) {
-			(this.backend as WebSocketPush).add(pushRef, user.id, req.ws);
+			(this.backend as WebSocketPush).add(pushRef, user.id, req.ws as ExtendedWebSocket);
 		} else if (!this.useWebSockets) {
 			(this.backend as SSEPush).add(pushRef, user.id, { req, res });
 		} else {

@@ -24,7 +24,7 @@ import type { ExternalHooks } from '@/external-hooks';
 import type WebSocket from 'ws';
 
 export interface ExtendedWebSocket extends WebSocket {
-	isAlive?: boolean;
+	isAlive: boolean;
 }
 
 export interface ICredentialsTypeData {
