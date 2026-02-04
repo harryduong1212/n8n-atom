@@ -147,10 +147,11 @@ function updateDependencies(deps, versionMapping, allowAlias = true) {
 	return updated;
 }
 
-// Check if package version already exists
+// Check if package version already exists on the public npm registry (so "already published" matches npmjs.com)
+const NPM_REGISTRY = 'https://registry.npmjs.org';
 function checkVersionExists(name, version) {
 	try {
-		const result = execSync(`npm view ${name}@${version} version`, {
+		const result = execSync(`npm view ${name}@${version} version --registry ${NPM_REGISTRY}`, {
 			stdio: 'pipe',
 			encoding: 'utf-8',
 		});
