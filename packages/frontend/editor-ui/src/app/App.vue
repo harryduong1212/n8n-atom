@@ -88,80 +88,99 @@ useTelemetryContext({ ndv_source: computed(() => ndvStore.lastSetActiveNodeSourc
 const toast = useToast();
 const { applyRunDataFromFile } = useExecutionDebugging();
 
+// Deduplication guard: prevent concurrent syncWorkflow calls from creating duplicate workflows
+let syncingPromise: Promise<void> | null = null;
+
 async function handleVSCodeWorkflowSync(messageEvent: MessageEvent) {
 	// Handle object-based messages from VS Code webview
 	if (typeof messageEvent.data === 'object' && messageEvent.data !== null) {
 		if (messageEvent.data.type === 'workflowSync') {
 			console.log('[App.vue] Received workflowSync message');
-			try {
-				const { syncWorkflow, navigateToWorkflow } = useWorkflowSync();
-				const { initializeWorkspace } = useCanvasOperations();
-				const workflowsStore = useWorkflowsStore();
-				const workflowData = messageEvent.data.workflow;
 
-				if (!workflowData || !workflowData.name) {
-					throw new Error('Invalid workflow data: missing name');
-				}
-
-				console.log('[App.vue] Syncing workflow:', workflowData.name);
-				const result = await syncWorkflow(workflowData);
-
-				// Navigate to the workflow only if we're not already on it or if it's a new workflow
-				// This prevents closing the NDV when syncing after node execution
-				if (result.action === 'created' || workflowsStore.workflowId !== result.workflow.id) {
-					await navigateToWorkflow(result.workflow.id);
-				}
-
-				// Refresh the workflow data in the UI by fetching and initializing workspace
-				try {
-					const updatedWorkflow = await workflowsStore.fetchWorkflow(result.workflow.id);
-					if (updatedWorkflow.checksum) {
-						// Check if we're currently viewing this workflow
-						if (workflowsStore.workflowId === result.workflow.id) {
-							await initializeWorkspace(updatedWorkflow);
-							console.log('[App.vue] Workflow UI refreshed');
-						}
-					}
-				} catch (refreshError) {
-					console.warn('[App.vue] Failed to refresh workflow UI:', refreshError);
-					// Don't throw - sync was successful, refresh is just a nice-to-have
-				}
-
-				// Notify VS Code that sync completed
-				if (window.parent) {
-					window.parent.postMessage(
-						JSON.stringify({
-							command: 'workflowSyncComplete',
-							workflowId: result.workflow.id,
-							workflowName: result.workflow.name,
-							action: result.action,
-						}),
-						'*',
-					);
-				}
-
-				// Show toast message only for new workflow creation
-				if (result.action === 'created') {
-					toast.showMessage({
-						title: 'Workflow Created',
-						message: `Created new workflow: ${result.workflow.name}`,
-						type: 'success',
-					});
-				}
-			} catch (e) {
-				console.error('[App.vue] Workflow sync error:', e);
-				if (window.top) {
-					window.top.postMessage(
-						JSON.stringify({
-							command: 'error',
-							message: 'Failed to sync workflow',
-							error: (e as Error).message,
-						}),
-						'*',
-					);
-				}
-				toast.showError(e, 'Workflow Sync Error');
+			// Send ACK immediately so the extension stops retrying
+			if ((window as any).vscode) {
+				(window as any).vscode.postMessage({ type: 'workflowSyncAck' });
 			}
+
+			// Skip if a sync is already in progress (prevents concurrent creates)
+			if (syncingPromise) {
+				console.log('[App.vue] Already syncing, skipping duplicate workflowSync');
+				return;
+			}
+
+			syncingPromise = (async () => {
+				try {
+					const { syncWorkflow, navigateToWorkflow } = useWorkflowSync();
+					const { initializeWorkspace } = useCanvasOperations();
+					const workflowsStore = useWorkflowsStore();
+					const workflowData = messageEvent.data.workflow;
+
+					if (!workflowData || !workflowData.name) {
+						throw new Error('Invalid workflow data: missing name');
+					}
+
+					console.log('[App.vue] Syncing workflow:', workflowData.name);
+					const result = await syncWorkflow(workflowData);
+
+					// Navigate to the workflow only if we're not already on it or if it's a new workflow
+					// This prevents closing the NDV when syncing after node execution
+					if (result.action === 'created' || workflowsStore.workflowId !== result.workflow.id) {
+						await navigateToWorkflow(result.workflow.id);
+					}
+
+					// Refresh the workflow data in the UI by fetching and initializing workspace
+					try {
+						const updatedWorkflow = await workflowsStore.fetchWorkflow(result.workflow.id);
+						if (updatedWorkflow.checksum) {
+							// Check if we're currently viewing this workflow
+							if (workflowsStore.workflowId === result.workflow.id) {
+								await initializeWorkspace(updatedWorkflow);
+								console.log('[App.vue] Workflow UI refreshed');
+							}
+						}
+					} catch (refreshError) {
+						console.warn('[App.vue] Failed to refresh workflow UI:', refreshError);
+						// Don't throw - sync was successful, refresh is just a nice-to-have
+					}
+
+					// Notify VS Code that sync completed
+					if (window.parent) {
+						window.parent.postMessage(
+							JSON.stringify({
+								command: 'workflowSyncComplete',
+								workflowId: result.workflow.id,
+								workflowName: result.workflow.name,
+								action: result.action,
+							}),
+							'*',
+						);
+					}
+
+					// Show toast message only for new workflow creation
+					if (result.action === 'created') {
+						toast.showMessage({
+							title: 'Workflow Created',
+							message: `Created new workflow: ${result.workflow.name}`,
+							type: 'success',
+						});
+					}
+				} catch (e) {
+					console.error('[App.vue] Workflow sync error:', e);
+					if (window.top) {
+						window.top.postMessage(
+							JSON.stringify({
+								command: 'error',
+								message: 'Failed to sync workflow',
+								error: (e as Error).message,
+							}),
+							'*',
+						);
+					}
+					toast.showError(e, 'Workflow Sync Error');
+				}
+			})().finally(() => {
+				syncingPromise = null;
+			});
 		} else if (messageEvent.data.type === 'dataFileLoaded') {
 			console.log('[App.vue] Received dataFileLoaded message');
 			try {
