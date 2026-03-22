@@ -1,0 +1,111 @@
+{
+  "name": "MCP Curl GET",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "mcp-curl-get",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "b1000000-0001-4000-8000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "mcp-curl-get-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Extract request parameters from trigger input\nconst input = $input.first().json;\n\nconst url = input.url || input.body?.url;\nconst headers = input.headers || input.body?.headers || {};\nconst timeout = input.timeout || input.body?.timeout || 30000;\n\nif (!url) {\n  return [{ json: { error: 'Missing required parameter: url' } }];\n}\n\nreturn [{ json: { url, headers, timeout } }];"
+      },
+      "id": "b1000000-0002-4000-8000-000000000002",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-mcp-curl/1.0.0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": "={{ $json.timeout }}",
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "b1000000-0003-4000-8000-000000000003",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Format the response like curl output\nconst item = $input.first().json;\n\nconst status = item.statusCode || 200;\nconst statusText = item.statusMessage || 'OK';\nconst headers = item.headers || {};\nconst body = item.body || item.data || '';\nconst url = item.url || '';\n\nlet output = `HTTP ${status} ${statusText}\\n`;\noutput += `URL: ${url}\\n\\n`;\n\noutput += 'Response Headers:\\n';\nfor (const [key, value] of Object.entries(headers)) {\n  output += `${key}: ${value}\\n`;\n}\noutput += '\\n';\n\noutput += 'Response Body:\\n';\nif (typeof body === 'object') {\n  output += JSON.stringify(body, null, 2);\n} else {\n  output += String(body);\n}\n\nreturn [{ json: { output, status, url } }];"
+      },
+      "id": "b1000000-0004-4000-8000-000000000004",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
