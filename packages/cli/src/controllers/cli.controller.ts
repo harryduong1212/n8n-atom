@@ -1,11 +1,26 @@
 import { Logger } from '@n8n/backend-common';
-import { WorkflowRepository } from '@n8n/db';
-import { Get, Post, Param, RestController } from '@n8n/decorators';
+import {
+	WorkflowRepository,
+	SharedWorkflowRepository,
+	ProjectRepository,
+	ExecutionRepository,
+	generateNanoId,
+} from '@n8n/db';
+import { Get, Post, RestController } from '@n8n/decorators';
 import type { Request, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import type { IWorkflowBase, IWorkflowExecutionDataProcess } from 'n8n-workflow';
 import { CHAT_TRIGGER_NODE_TYPE, createRunExecutionData } from 'n8n-workflow';
 
+import { ActiveExecutions } from '@/active-executions';
 import { OwnershipService } from '@/services/ownership.service';
-import { WorkflowExecutionService } from '@/workflows/workflow-execution.service';
+import { isWorkflowIdValid } from '@/utils';
+import { WorkflowRunner } from '@/workflow-runner';
+
+interface CliRunBody {
+	workflowData: IWorkflowBase;
+	chatInput?: string;
+}
 
 /**
  * Internal CLI controller for executing workflows from the command line.
@@ -14,17 +29,21 @@ import { WorkflowExecutionService } from '@/workflows/workflow-execution.service
  */
 @RestController('/cli')
 export class CliController {
+	private static readonly MAX_WAIT_MS = 5 * 60 * 1000; // 5 minutes
+
 	constructor(
 		private readonly logger: Logger,
 		private readonly workflowRepository: WorkflowRepository,
+		private readonly sharedWorkflowRepository: SharedWorkflowRepository,
+		private readonly projectRepository: ProjectRepository,
+		private readonly executionRepository: ExecutionRepository,
 		private readonly ownershipService: OwnershipService,
-		private readonly workflowExecutionService: WorkflowExecutionService,
+		private readonly activeExecutions: ActiveExecutions,
+		private readonly workflowRunner: WorkflowRunner,
 	) {}
 
 	/**
-	 * Check if a trigger node is a webhook-based trigger that needs special handling.
-	 * Webhook/chat triggers return { waitingForWebhook: true } from executeManually(),
-	 * so we need to inject mock data and use executeChatWorkflow() instead.
+	 * Check if a trigger node is a webhook-based trigger that needs pinData injection.
 	 */
 	private isWebhookBasedTrigger(nodeType: string): boolean {
 		return (
@@ -35,135 +54,312 @@ export class CliController {
 	}
 
 	/**
-	 * Execute a workflow by ID. Restricted to localhost only.
-	 * POST /rest/cli/workflows/:workflowId/run
+	 * Ensure localhost-only access.
 	 */
-	@Post('/workflows/:workflowId/run', { skipAuth: true })
-	async runWorkflow(req: Request, res: Response, @Param('workflowId') workflowId: string) {
-		this.logger.info(`[cli-controller] Received run request for workflow ${workflowId}`);
-
-		// Security: Only allow requests from localhost
+	private isLocalRequest(req: Request): boolean {
 		const remoteAddress = req.ip || req.socket.remoteAddress || '';
-		const isLocalhost =
+		return (
 			remoteAddress === '127.0.0.1' ||
 			remoteAddress === '::1' ||
 			remoteAddress === '::ffff:127.0.0.1' ||
-			remoteAddress === 'localhost';
-
-		this.logger.info(
-			`[cli-controller] Request from IP: ${remoteAddress}, isLocalhost: ${isLocalhost}`,
+			remoteAddress === 'localhost'
 		);
+	}
 
-		if (!isLocalhost) {
-			this.logger.warn(`[cli-controller] Rejected non-localhost request from ${remoteAddress}`);
+	/**
+	 * Synchronous workflow run endpoint.
+	 * Accepts a full workflow JSON + optional chatInput, syncs it to the DB,
+	 * executes it, waits for completion, and returns the full results.
+	 *
+	 * POST /rest/cli/run
+	 */
+	@Post('/run', { skipAuth: true })
+	async run(req: Request, res: Response) {
+		const startTime = Date.now();
+		this.logger.info('[cli] ── RUN REQUEST ──');
+
+		if (!this.isLocalRequest(req)) {
 			res.status(403).json({ error: 'CLI endpoint is only accessible from localhost' });
 			return;
 		}
 
-		// Find the workflow
-		const workflow = await this.workflowRepository.findOneBy({ id: workflowId });
-		if (!workflow) {
-			this.logger.error(`[cli-controller] Workflow ${workflowId} not found`);
-			res.status(404).json({ error: `Workflow with ID "${workflowId}" not found` });
+		const body = req.body as CliRunBody;
+
+		if (!body.workflowData) {
+			res.status(400).json({ error: 'Missing workflowData in request body' });
 			return;
 		}
 
-		this.logger.info(`[cli-controller] Found workflow: "${workflow.name}" (ID: ${workflow.id})`);
+		const fileData = body.workflowData;
+		const chatInput = body.chatInput;
 
-		// Find the trigger/start node in the workflow
-		const triggerNode = workflow.nodes.find(
-			(node) =>
-				node.type.toLowerCase().includes('trigger') ||
-				node.type.toLowerCase().includes('webhook') ||
-				node.type === 'n8n-nodes-base.start',
-		);
-
-		if (!triggerNode) {
-			this.logger.error(`[cli-controller] No trigger node found in workflow ${workflowId}`);
-			res.status(400).json({ error: 'No trigger node found in workflow. Cannot execute.' });
+		// Validate basic workflow structure
+		if (!fileData.nodes || !Array.isArray(fileData.nodes)) {
+			res.status(400).json({ error: 'Workflow does not contain valid nodes' });
 			return;
 		}
 
-		this.logger.info(
-			`[cli-controller] Trigger node: "${triggerNode.name}" (type: ${triggerNode.type})`,
-		);
+		if (!fileData.connections || typeof fileData.connections !== 'object') {
+			res.status(400).json({ error: 'Workflow does not contain valid connections' });
+			return;
+		}
 
-		// Get the instance owner for execution context
-		const user = await this.ownershipService.getInstanceOwner();
-		this.logger.info(`[cli-controller] Executing as instance owner: ${user.id}`);
+		this.logger.info(`[cli] Workflow: "${fileData.name}", Nodes: ${fileData.nodes.length}`);
 
 		try {
-			// Check if this is a webhook-based trigger (chatTrigger, webhook, etc.)
-			// These triggers return { waitingForWebhook: true } from executeManually(),
-			// so we bypass the webhook mechanism by injecting mock data and using executeChatWorkflow()
-			if (this.isWebhookBasedTrigger(triggerNode.type)) {
-				this.logger.info(
-					`[cli-controller] Webhook-based trigger detected (${triggerNode.type}). Using direct execution with mock data.`,
-				);
+			// ── Step 1: Sync workflow to DB ──────────────────────────────────
+			const user = await this.ownershipService.getInstanceOwner();
+			const workflowId = await this.syncWorkflow(fileData, user.id);
+			const workflow = await this.workflowRepository.findOneBy({ id: workflowId });
 
-				// Build mock input data for the trigger node, similar to how chat-hub does it
+			if (!workflow) {
+				res.status(500).json({ error: 'Failed to sync workflow to database' });
+				return;
+			}
+
+			this.logger.info(`[cli] Synced workflow: "${workflow.name}" (ID: ${workflowId})`);
+
+			// ── Step 2: Find trigger node ────────────────────────────────────
+			const triggerNode = workflow.nodes.find(
+				(node) =>
+					node.type.toLowerCase().includes('trigger') ||
+					node.type.toLowerCase().includes('webhook') ||
+					node.type === 'n8n-nodes-base.start',
+			);
+
+			if (!triggerNode) {
+				res.status(400).json({ error: 'No trigger node found in workflow' });
+				return;
+			}
+
+			this.logger.info(`[cli] Trigger: "${triggerNode.name}" (${triggerNode.type})`);
+
+			// ── Step 3: Execute workflow ─────────────────────────────────────
+			let executionId: string;
+
+			if (this.isWebhookBasedTrigger(triggerNode.type)) {
+				// Webhook/chat triggers: inject mock data via pinData + nodeExecutionStack
+				this.logger.info('[cli] Using direct execution (webhook/chat trigger)');
+
 				const isChatTrigger = triggerNode.type === CHAT_TRIGGER_NODE_TYPE;
-				const mockInputData = isChatTrigger
+				const mockData = isChatTrigger
 					? {
 							sessionId: `cli-${Date.now()}`,
 							action: 'sendMessage',
-							chatInput: (req.body as Record<string, unknown>)?.chatInput ?? 'CLI execution',
+							chatInput: chatInput ?? 'CLI execution',
 						}
 					: {
 							headers: {},
 							params: {},
 							query: {},
-							body: (req.body as Record<string, unknown>) ?? {},
+							body: { chatInput },
 						};
 
 				const executionData = createRunExecutionData({
+					startData: {},
+					resultData: {
+						pinData: { [triggerNode.name]: [{ json: mockData }] },
+						runData: {},
+					},
 					executionData: {
+						contextData: {},
+						metadata: {},
 						nodeExecutionStack: [
 							{
 								node: triggerNode,
 								data: {
-									main: [[{ json: mockInputData }]],
+									main: [[{ json: mockData }]],
 								},
 								source: null,
 							},
 						],
-					},
-					manualData: {
-						userId: user.id,
+						waitingExecution: {},
+						waitingExecutionSource: {},
 					},
 				});
 
-				const result = await this.workflowExecutionService.executeChatWorkflow(
-					workflow,
+				const runData: IWorkflowExecutionDataProcess = {
+					executionMode: isChatTrigger ? 'chat' : 'webhook',
+					workflowData: workflow,
+					userId: user.id,
+					startNodes: [{ name: triggerNode.name, sourceData: null }],
+					pinData: { [triggerNode.name]: [{ json: mockData }] },
 					executionData,
-					user,
-				);
+				};
 
-				this.logger.info(`[cli-controller] Execution triggered: ${JSON.stringify(result)}`);
-				res.json(result);
+				executionId = await this.workflowRunner.run(runData);
 			} else {
-				// Regular trigger: use executeManually() as before
-				const result = await this.workflowExecutionService.executeManually(
-					{
-						workflowData: workflow,
-						triggerToStartFrom: {
-							name: triggerNode.name,
-						},
-					} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-					user,
+				// Regular triggers: use executeManually-style approach with pinData
+				this.logger.info('[cli] Using trigger execution (regular trigger)');
+
+				const runData: IWorkflowExecutionDataProcess = {
+					executionMode: 'trigger',
+					workflowData: workflow,
+					userId: user.id,
+					triggerToStartFrom: { name: triggerNode.name },
+				};
+
+				executionId = await this.workflowRunner.run(runData);
+			}
+
+			this.logger.info(`[cli] Execution started: ${executionId}`);
+
+			// ── Step 4: Wait for completion ──────────────────────────────────
+			let timeoutId: NodeJS.Timeout | undefined;
+			const timeoutPromise = new Promise<never>((_, reject) => {
+				timeoutId = setTimeout(() => {
+					reject(new Error(`Execution timed out after ${CliController.MAX_WAIT_MS / 1000}s`));
+				}, CliController.MAX_WAIT_MS);
+			});
+
+			try {
+				const runResult = await Promise.race([
+					this.activeExecutions.getPostExecutePromise(executionId),
+					timeoutPromise,
+				]);
+
+				if (timeoutId) clearTimeout(timeoutId);
+
+				const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+
+				if (!runResult) {
+					this.logger.error('[cli] Execution returned no data');
+					res.json({
+						success: false,
+						executionId,
+						status: 'error',
+						executionTime: totalTime,
+						error: 'Execution returned no data',
+					});
+					return;
+				}
+
+				const isSuccess = runResult.status !== 'error' && !runResult.data.resultData?.error;
+				this.logger.info(
+					`[cli] Execution completed in ${totalTime}s — status: ${runResult.status}, success: ${isSuccess}`,
 				);
 
-				this.logger.info(`[cli-controller] Execution triggered: ${JSON.stringify(result)}`);
-				res.json(result);
+				// Also fetch full persisted execution data for complete node outputs
+				const fullExecution = await this.executionRepository.findSingleExecution(executionId, {
+					includeData: true,
+					unflattenData: true,
+				});
+
+				res.json({
+					success: isSuccess,
+					executionId,
+					status: runResult.status,
+					executionTime: totalTime,
+					data: fullExecution?.data?.resultData ?? runResult.data.resultData,
+				});
+			} catch (error) {
+				if (timeoutId) clearTimeout(timeoutId);
+				throw error;
 			}
 		} catch (error) {
-			this.logger.error(
-				`[cli-controller] Execution failed: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+			this.logger.error(`[cli] Error: ${error instanceof Error ? error.message : String(error)}`);
 			res.status(500).json({
+				success: false,
+				executionTime: totalTime,
 				error: error instanceof Error ? error.message : String(error),
 			});
 		}
+	}
+
+	/**
+	 * Sync workflow JSON to the database. Matches by ID, then by name, or creates new.
+	 * Returns the workflow ID.
+	 */
+	private async syncWorkflow(fileData: IWorkflowBase, userId: string): Promise<string> {
+		// Try matching by ID
+		if (fileData.id && isWorkflowIdValid(fileData.id)) {
+			const existing = await this.workflowRepository.findOneBy({ id: fileData.id });
+			if (existing) {
+				const fileUpdatedAt = fileData.updatedAt
+					? new Date(fileData.updatedAt as unknown as string)
+					: null;
+				const serverUpdatedAt = existing.updatedAt
+					? new Date(existing.updatedAt as unknown as string)
+					: null;
+
+				if (fileUpdatedAt && serverUpdatedAt && fileUpdatedAt > serverUpdatedAt) {
+					this.logger.info(`[cli] Updating existing workflow (ID match): ${existing.id}`);
+					await this.workflowRepository.update(existing.id, {
+						nodes: fileData.nodes,
+						connections: fileData.connections,
+						settings: fileData.settings,
+						name: fileData.name,
+						updatedAt: new Date(),
+					});
+				} else {
+					this.logger.info(`[cli] Using existing workflow (ID match): ${existing.id}`);
+				}
+				return existing.id;
+			}
+		}
+
+		// Try matching by name
+		if (fileData.name) {
+			const existing = await this.workflowRepository.findOneBy({ name: fileData.name });
+			if (existing) {
+				const fileUpdatedAt = fileData.updatedAt
+					? new Date(fileData.updatedAt as unknown as string)
+					: null;
+				const serverUpdatedAt = existing.updatedAt
+					? new Date(existing.updatedAt as unknown as string)
+					: null;
+
+				if (fileUpdatedAt && serverUpdatedAt && fileUpdatedAt > serverUpdatedAt) {
+					this.logger.info(`[cli] Updating existing workflow (name match): ${existing.id}`);
+					await this.workflowRepository.update(existing.id, {
+						nodes: fileData.nodes,
+						connections: fileData.connections,
+						settings: fileData.settings,
+						name: fileData.name,
+						updatedAt: new Date(),
+					});
+				} else {
+					this.logger.info(`[cli] Using existing workflow (name match): ${existing.id}`);
+				}
+				return existing.id;
+			}
+		}
+
+		// Create new workflow
+		const workflowId =
+			fileData.id && isWorkflowIdValid(fileData.id) ? fileData.id : generateNanoId();
+		fileData.id = workflowId;
+		this.logger.info(`[cli] Creating new workflow: "${fileData.name}" (ID: ${workflowId})`);
+
+		const { manager: dbManager } = this.workflowRepository;
+		await dbManager.transaction(async (transactionManager) => {
+			const personalProject = await this.projectRepository.getPersonalProjectForUserOrFail(
+				userId,
+				transactionManager,
+			);
+
+			const workflowEntity = this.workflowRepository.create({
+				...fileData,
+				active: false,
+				isArchived: false,
+				versionId: fileData.versionId || uuidv4(),
+				createdAt: fileData.createdAt || new Date(),
+				updatedAt: fileData.updatedAt || new Date(),
+			});
+
+			const savedWorkflow = await transactionManager.save(workflowEntity);
+
+			const sharedWorkflow = this.sharedWorkflowRepository.create({
+				role: 'workflow:owner',
+				projectId: personalProject.id,
+				workflow: savedWorkflow,
+			});
+
+			await transactionManager.save(sharedWorkflow);
+		});
+
+		return workflowId;
 	}
 
 	/**
@@ -172,7 +368,6 @@ export class CliController {
 	 */
 	@Get('/health', { skipAuth: true })
 	async health() {
-		this.logger.info('[cli-controller] Health check');
 		return { status: 'ok', timestamp: new Date().toISOString() };
 	}
 }
