@@ -22,6 +22,7 @@ import { BaseCommand } from './base-command';
 const flagsSchema = z.object({
 	file: z.string().describe('Path to the .n8n workflow file to run'),
 	rawOutput: z.boolean().describe('Outputs only JSON data, with no other text').optional(),
+	input: z.string().describe('Input text for chat/webhook trigger workflows').optional(),
 });
 
 @Command({
@@ -263,7 +264,7 @@ export class Run extends BaseCommand<z.infer<typeof flagsSchema>> {
 			headers: {
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({}),
+			body: JSON.stringify({ chatInput: flags.input }),
 		});
 
 		this.logger.info(`[run] Response status: ${response.status} ${response.statusText}`);
