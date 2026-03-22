@@ -28,7 +28,7 @@ try {
 	console.log('\n=== Result ===');
 	console.log(JSON.stringify(result, null, 2));
 
-	process.exit(result.success ? 0 : 1);
+	process.exit(result.length > 0 ? 0 : 1);
 } catch (error) {
 	console.error('\n=== Error ===');
 	console.error(error.message);

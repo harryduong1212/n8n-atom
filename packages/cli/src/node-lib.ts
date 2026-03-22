@@ -21,12 +21,23 @@ interface N8nRunOptions {
 	baseUrl?: string;
 }
 
-interface N8nRunResult {
+/** Shape of the raw API response from /rest/cli/run */
+interface N8nApiResponse {
 	success: boolean;
 	executionId?: string;
 	status?: string;
 	executionTime?: string;
-	data?: Record<string, unknown>;
+	data?: {
+		runData?: Record<
+			string,
+			Array<{
+				executionStatus?: string;
+				data?: { main?: Array<Array<{ json: unknown }>> };
+			}>
+		>;
+		lastNodeExecuted?: string;
+		error?: unknown;
+	};
 	error?: string;
 }
 
@@ -36,13 +47,9 @@ interface N8nRunResult {
  * @param filePath - Path to the .n8n workflow JSON file
  * @param input - Optional input string (used as chatInput for chat/webhook triggers)
  * @param options - Optional configuration (port, baseUrl)
- * @returns The execution result including per-node outputs
+ * @returns The output data from the last executed node (array of JSON items)
  */
-async function run(
-	filePath: string,
-	input?: string,
-	options?: N8nRunOptions,
-): Promise<N8nRunResult> {
+async function run(filePath: string, input?: string, options?: N8nRunOptions): Promise<unknown[]> {
 	console.log(`${LOG_PREFIX} ── RUN START ──`);
 	console.log(`${LOG_PREFIX} filePath: "${filePath}"`);
 	console.log(`${LOG_PREFIX} input: ${input !== undefined ? `"${input}"` : '(none)'}`);
@@ -128,25 +135,52 @@ async function run(
 		throw new Error(errorMsg);
 	}
 
-	// ── Step 5: Parse and return result ─────────────────────────────
-	const result = (await response.json()) as N8nRunResult;
+	// ── Step 5: Parse result and extract last node output ───────────
+	const apiResult = (await response.json()) as N8nApiResponse;
 
 	console.log(`${LOG_PREFIX} ── RESULT ──`);
-	console.log(`${LOG_PREFIX} Success: ${result.success}`);
-	console.log(`${LOG_PREFIX} Execution ID: ${result.executionId ?? 'unknown'}`);
-	console.log(`${LOG_PREFIX} Status: ${result.status ?? 'unknown'}`);
-	console.log(`${LOG_PREFIX} Execution time: ${result.executionTime ?? '?'}s`);
+	console.log(`${LOG_PREFIX} Success: ${apiResult.success}`);
+	console.log(`${LOG_PREFIX} Execution ID: ${apiResult.executionId ?? 'unknown'}`);
+	console.log(`${LOG_PREFIX} Status: ${apiResult.status ?? 'unknown'}`);
+	console.log(`${LOG_PREFIX} Execution time: ${apiResult.executionTime ?? '?'}s`);
 
-	if (!result.success && result.error) {
-		console.error(`${LOG_PREFIX} Execution error: ${result.error}`);
+	if (!apiResult.success) {
+		const errorMsg = apiResult.error ?? 'Workflow execution failed';
+		console.error(`${LOG_PREFIX} Execution error: ${errorMsg}`);
+		throw new Error(String(errorMsg));
 	}
 
+	// Extract only the last node's output
+	const lastNodeName = apiResult.data?.lastNodeExecuted;
+	console.log(`${LOG_PREFIX} Last node executed: "${lastNodeName ?? 'unknown'}"`);
+
+	if (!lastNodeName || !apiResult.data?.runData?.[lastNodeName]) {
+		console.warn(`${LOG_PREFIX} No output data found for last node`);
+		console.log(`${LOG_PREFIX} ── RUN END ──`);
+		return [];
+	}
+
+	const lastNodeRuns = apiResult.data.runData[lastNodeName];
+	const lastRun = lastNodeRuns[lastNodeRuns.length - 1];
+	const outputItems: unknown[] = [];
+
+	if (lastRun?.data?.main) {
+		for (const branch of lastRun.data.main) {
+			if (branch) {
+				for (const item of branch) {
+					outputItems.push(item.json);
+				}
+			}
+		}
+	}
+
+	console.log(`${LOG_PREFIX} Output items: ${outputItems.length}`);
 	console.log(`${LOG_PREFIX} ── RUN END ──`);
-	return result;
+	return outputItems;
 }
 
 /** The n8n library API object */
 const n8n = { run };
 
 export default n8n;
-export { run, type N8nRunOptions, type N8nRunResult };
+export { run, type N8nRunOptions };
