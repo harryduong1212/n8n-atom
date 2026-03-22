@@ -300,25 +300,31 @@ export class Run extends BaseCommand<z.infer<typeof flagsSchema>> {
 		const maxWaitSeconds = 300; // 5 minutes max
 
 		while (elapsedSeconds < maxWaitSeconds) {
-			const execution = await executionRepository.findOneBy({ id: executionId });
+			// First check status with a lightweight query
+			const executionStatus = await executionRepository.findOneBy({ id: executionId });
 
-			if (execution) {
-				this.logger.info(`[run] Execution status: ${execution.status}`);
-
+			if (executionStatus) {
 				if (
-					execution.status === 'success' ||
-					execution.status === 'error' ||
-					execution.status === 'crashed'
+					executionStatus.status === 'success' ||
+					executionStatus.status === 'error' ||
+					executionStatus.status === 'crashed'
 				) {
 					const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
 					this.logger.info(
-						`[run] Execution completed in ${totalTime}s with status: ${execution.status}`,
+						`[run] Execution completed in ${totalTime}s with status: ${executionStatus.status}`,
 					);
+
+					// Fetch full execution data including node outputs
+					this.logger.info(`[run] Fetching full execution data with node outputs...`);
+					const fullExecution = await executionRepository.findSingleExecution(executionId, {
+						includeData: true,
+						unflattenData: true,
+					});
 
 					this.logger.info(`[run] ── RESULTS ──`);
 
-					if (execution.status === 'error' || execution.status === 'crashed') {
-						this.logger.error(`[run] ❌ Execution FAILED (status: ${execution.status})`);
+					if (executionStatus.status === 'error' || executionStatus.status === 'crashed') {
+						this.logger.error(`[run] ❌ Execution FAILED (status: ${executionStatus.status})`);
 						this.logger.error('====================================');
 					} else {
 						if (flags.rawOutput === undefined) {
@@ -327,16 +333,43 @@ export class Run extends BaseCommand<z.infer<typeof flagsSchema>> {
 						}
 					}
 
-					// Output the execution data
-					const executionData = {
-						id: execution.id,
-						status: execution.status,
-						finished: execution.finished,
-						startedAt: execution.startedAt,
-						stoppedAt: execution.stoppedAt,
-						workflowId: execution.workflowId,
-					};
-					this.log(JSON.stringify(executionData, null, 2));
+					// Log per-node results
+					if (fullExecution?.data?.resultData?.runData) {
+						const runData = fullExecution.data.resultData.runData;
+						const nodeNames = Object.keys(runData);
+						this.logger.info(
+							`[run] Nodes executed (${nodeNames.length}): ${nodeNames.join(' → ')}`,
+						);
+
+						for (const [nodeName, nodeRuns] of Object.entries(runData)) {
+							for (const nodeRun of nodeRuns as Array<{
+								executionStatus?: string;
+								executionTime?: number;
+								data?: { main?: Array<Array<{ json: unknown }>> };
+							}>) {
+								const status = nodeRun.executionStatus ?? 'unknown';
+								const time = nodeRun.executionTime ?? 0;
+								this.logger.info(`[run]   ✅ "${nodeName}" — status: ${status}, time: ${time}ms`);
+
+								// Log the output data from each node
+								if (nodeRun.data?.main) {
+									for (const outputBranch of nodeRun.data.main) {
+										if (outputBranch) {
+											this.logger.info(`[run]     Output items: ${outputBranch.length}`);
+											for (const item of outputBranch) {
+												if (item.json) {
+													this.logger.info(`[run]     → ${JSON.stringify(item.json)}`);
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+
+					// Output the full execution result as JSON
+					this.log(JSON.stringify(fullExecution ?? executionStatus, null, 2));
 					this.logger.info(`[run] Done. Total time: ${totalTime}s`);
 					return;
 				}
@@ -348,7 +381,7 @@ export class Run extends BaseCommand<z.infer<typeof flagsSchema>> {
 
 			if (Math.floor(elapsedSeconds) % 5 === 0 && elapsedSeconds > 0) {
 				this.logger.info(
-					`[run] ⏳ Still waiting for execution ${executionId}... (${Math.floor(elapsedSeconds)}s elapsed, status: ${execution?.status ?? 'pending'})`,
+					`[run] ⏳ Still waiting for execution ${executionId}... (${Math.floor(elapsedSeconds)}s elapsed, status: ${executionStatus?.status ?? 'pending'})`,
 				);
 			}
 		}
