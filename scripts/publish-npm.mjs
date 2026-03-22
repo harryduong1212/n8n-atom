@@ -96,7 +96,7 @@ function loadCatalogs() {
 const catalogs = loadCatalogs();
 
 // Update dependencies in package.json
-function updateDependencies(deps, versionMapping) {
+function updateDependencies(deps, versionMapping, allowAlias = true) {
 	if (!deps) return deps;
 	const updated = {};
 	for (const [name, version] of Object.entries(deps)) {
@@ -136,15 +136,33 @@ function updateDependencies(deps, versionMapping) {
 			newVersion = actualVersion || version.replace('workspace:', '');
 		}
 
-		updated[newName] = newVersion;
+		const isInternal = nameMapping.has(name);
+
+		if (allowAlias && isInternal) {
+			updated[name] = `npm:${newName}@${newVersion}`;
+		} else {
+			updated[newName] = newVersion;
+		}
 	}
 	return updated;
 }
 
-// Check if package version already exists
+// Return only error lines from npm output (strip "npm notice" noise)
+function getErrorOnly(text) {
+	if (!text || !text.trim()) return '';
+	return text
+		.split('\n')
+		.filter((line) => !line.includes('npm notice'))
+		.filter((line) => line.trim().length > 0)
+		.join('\n')
+		.trim();
+}
+
+// Check if package version already exists on the public npm registry (so "already published" matches npmjs.com)
+const NPM_REGISTRY = 'https://registry.npmjs.org';
 function checkVersionExists(name, version) {
 	try {
-		const result = execSync(`npm view ${name}@${version} version`, {
+		const result = execSync(`npm view ${name}@${version} version --registry ${NPM_REGISTRY}`, {
 			stdio: 'pipe',
 			encoding: 'utf-8',
 		});
@@ -246,13 +264,30 @@ async function main() {
 			const originalName = pkg.name;
 			pkg.name = nameMapping.get(originalName) || pkg.name;
 
+			// Preserve original node type prefix for workflow compatibility
+			// This ensures node types remain as 'n8n-nodes-base.manualTrigger'
+			// even when published as '@atom8n/n8n-nodes-base'
+			if (originalName !== pkg.name) {
+				const isNodesPackage = pkg.n8n?.nodes || 
+					originalName === 'n8n-nodes-base' || 
+					originalName === '@n8n/n8n-nodes-langchain';
+				
+				if (isNodesPackage) {
+					if (!pkg.n8n) {
+						pkg.n8n = {};
+					}
+					pkg.n8n.nodeTypePrefix = originalName;
+					console.log(`  📎 [NodeTypePrefix] ${pkg.name} -> nodeTypePrefix: ${originalName}`);
+				}
+			}
+
 			// Update version
 			pkg.version = versionMapping.get(originalName) || pkg.version;
 
 			// Update dependencies with version mapping
-			pkg.dependencies = updateDependencies(pkg.dependencies, versionMapping);
-			pkg.devDependencies = updateDependencies(pkg.devDependencies, versionMapping);
-			pkg.peerDependencies = updateDependencies(pkg.peerDependencies, versionMapping);
+			pkg.dependencies = updateDependencies(pkg.dependencies, versionMapping, true);
+			pkg.devDependencies = updateDependencies(pkg.devDependencies, versionMapping, true);
+			pkg.peerDependencies = updateDependencies(pkg.peerDependencies, versionMapping, false);
 
 			writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 		}
@@ -279,7 +314,7 @@ async function main() {
 			try {
 				// Check if version already exists
 				if (checkVersionExists(pkgName, pkg.version)) {
-					console.log(`  ⏭️  ${pkgName}@${pkg.version} (already published)`);
+					console.log(`  ⏭️  ${pkgName}@${pkg.version} (already published) v2`);
 					skipCount++;
 					continue;
 				}
@@ -303,7 +338,8 @@ async function main() {
 				
 				// Check for 2FA OTP requirement
 				if (fullError.includes('EOTP') || fullError.includes('one-time password')) {
-					console.log(fullError);
+					const errMsg = getErrorOnly(fullError);
+					if (errMsg) console.log(`     ${errMsg.replace(/\n/g, '\n     ')}`);
 					console.log(`  ❌ ${pkgName}@${pkg.version} - 2FA OTP required`);
 					console.log(`     Run with --otp=CODE or set NPM_OTP environment variable`);
 					if (failCount === 0) {
@@ -311,18 +347,18 @@ async function main() {
 					}
 					failCount++;
 				}
-				// Check for common "already published" patterns
+				// Only skip as "already published" when npm explicitly says so (avoid treating other E403 e.g. permission/forbidden as skip)
 				else if (
 					fullError.includes('previously published') ||
-					(fullError.includes('E403') && !fullError.includes('EOTP')) ||
 					fullError.includes('You cannot publish over the previously published versions') ||
 					fullError.includes('cannot publish over existing version')
 				) {
-					console.log(`  ⏭️  ${pkgName}@${pkg.version} (already published)`);
+					const errMsg = getErrorOnly(fullError);
+					console.log(`  ⏭️  ${pkgName}@${pkg.version} ${errMsg ? `\n     ${errMsg.replace(/\n/g, '\n     ')}` : ''}`);
 					skipCount++;
 				} else {
-					console.log(fullError);
-					// Show more detailed error - get the actual error line
+					const errMsg = getErrorOnly(fullError);
+					if (errMsg) console.log(`     ${errMsg.replace(/\n/g, '\n     ')}`);
 					const errorLines = fullError
 						.split('\n')
 						.filter(
@@ -332,7 +368,7 @@ async function main() {
 								line.includes('403') ||
 								line.includes('401') ||
 								line.includes('404') ||
-								line.trim().length > 0,
+								(line.trim().length > 0 && !line.includes('npm notice')),
 						);
 					const errorMsg = errorLines.slice(0, 3).join(' | ') || fullError.slice(0, 200);
 					console.log(`  ❌ ${pkgName}@${pkg.version} - ${errorMsg}`);

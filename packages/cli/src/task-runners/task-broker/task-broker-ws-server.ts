@@ -4,6 +4,7 @@ import { Time } from '@n8n/constants';
 import { Service } from '@n8n/di';
 import type { BrokerMessage, RunnerMessage } from '@n8n/task-runner';
 import { jsonStringify, UserError } from 'n8n-workflow';
+import { ExtendedWebSocket } from '@/interfaces';
 import type WebSocket from 'ws';
 
 import { WsStatusCodes } from '@/constants';
@@ -18,7 +19,7 @@ import { TaskRunnerLifecycleEvents } from '@/task-runners/task-runner-lifecycle-
 
 import { TaskBroker, type MessageCallback, type TaskRunner } from './task-broker.service';
 
-function heartbeat(this: WebSocket) {
+function heartbeat(this: ExtendedWebSocket) {
 	this.isAlive = true;
 }
 
@@ -30,7 +31,7 @@ type WsStatusCode = (typeof WsStatusCodes)[keyof typeof WsStatusCodes];
  */
 @Service()
 export class TaskBrokerWsServer {
-	runnerConnections: Map<TaskRunner['id'], WebSocket> = new Map();
+	runnerConnections: Map<TaskRunner['id'], ExtendedWebSocket> = new Map();
 
 	private heartbeatTimer: NodeJS.Timeout | undefined;
 
@@ -91,7 +92,7 @@ export class TaskBrokerWsServer {
 		this.runnerConnections.get(id)?.send(jsonStringify(message, { replaceCircularRefs: true }));
 	}
 
-	add(id: TaskRunner['id'], connection: WebSocket) {
+	add(id: TaskRunner['id'], connection: ExtendedWebSocket) {
 		connection.isAlive = true;
 		connection.on('pong', heartbeat);
 
@@ -174,7 +175,7 @@ export class TaskBrokerWsServer {
 	}
 
 	handleRequest(req: TaskBrokerServerInitRequest, _res: TaskBrokerServerInitResponse) {
-		this.add(req.query.id, req.ws);
+		this.add(req.query.id, req.ws as ExtendedWebSocket);
 	}
 
 	private async stopConnectedRunners() {

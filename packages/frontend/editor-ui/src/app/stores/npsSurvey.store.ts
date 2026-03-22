@@ -81,23 +81,8 @@ export const useNpsSurveyStore = defineStore('npsSurvey', () => {
 	}
 
 	async function showNpsSurveyIfPossible() {
-		if (!shouldShowNpsSurveyNext.value) {
-			return;
-		}
-
-		uiStore.openModal(NPS_SURVEY_MODAL_KEY);
-		shouldShowNpsSurveyNext.value = false;
-
-		const updatedState: NpsSurveyState = {
-			waitingForResponse: true,
-			lastShownAt: Date.now(),
-			ignoredCount:
-				currentSurveyState.value && 'ignoredCount' in currentSurveyState.value
-					? currentSurveyState.value.ignoredCount
-					: 0,
-		};
-		await updateNpsSurveyState(rootStore.restApiContext, updatedState);
-		currentSurveyState.value = updatedState;
+		// NPS survey disabled - never show
+		return;
 	}
 
 	async function respondNpsSurvey() {

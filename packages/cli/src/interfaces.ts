@@ -21,6 +21,11 @@ import type PCancelable from 'p-cancelable';
 
 import type { ActiveWorkflowManager } from '@/active-workflow-manager';
 import type { ExternalHooks } from '@/external-hooks';
+import type WebSocket from 'ws';
+
+export interface ExtendedWebSocket extends WebSocket {
+	isAlive: boolean;
+}
 
 export interface ICredentialsTypeData {
 	[key: string]: CredentialLoadingDetails;

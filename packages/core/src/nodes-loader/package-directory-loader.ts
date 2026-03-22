@@ -18,7 +18,18 @@ export class PackageDirectoryLoader extends DirectoryLoader {
 		super(directory, excludeNodes, includeNodes);
 
 		this.packageJson = this.readJSONSync('package.json');
-		this.packageName = this.packageJson.name;
+		this.logger.info(`[PackageDirectoryLoader] Package: ${this.packageJson.name}`);
+
+		// Use nodeTypePrefix if defined, otherwise fall back to package name
+		// This allows publishing under a different scope (e.g., @atom8n/n8n-nodes-base)
+		// while maintaining original node type identifiers (e.g., n8n-nodes-base.manualTrigger)
+		const nodeTypePrefix = this.packageJson.n8n?.nodeTypePrefix;
+		this.packageName = nodeTypePrefix ?? this.packageJson.name;
+		if (nodeTypePrefix) {
+			this.logger.info(
+				`[NodeTypeLoader] Package: ${this.packageJson.name}, using nodeTypePrefix: ${nodeTypePrefix}`,
+			);
+		}
 
 		this.excludeNodes = this.extractNodeTypes(excludeNodes, this.packageName);
 		this.includeNodes = this.extractNodeTypes(includeNodes, this.packageName);

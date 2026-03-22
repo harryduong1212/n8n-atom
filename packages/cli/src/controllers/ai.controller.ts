@@ -220,7 +220,7 @@ export class AiController {
 		req: AuthenticatedRequest,
 		_: Response,
 		@Body payload: AiSessionRetrievalRequestDto,
-	) {
+	): Promise<Awaited<ReturnType<WorkflowBuilderService['getSessions']>>> {
 		try {
 			const sessions = await this.workflowBuilderService.getSessions(payload.workflowId, req.user);
 			return sessions;

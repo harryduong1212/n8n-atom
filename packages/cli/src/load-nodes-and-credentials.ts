@@ -84,6 +84,8 @@ export class LoadNodesAndCredentials {
 			// In case "n8n" package is the root and the packages are
 			// in the "node_modules" folder underneath it.
 			path.join(CLI_DIR, 'node_modules'),
+			// In case "n8n" package is scoped (e.g. @atom8n/n8n) and packages are hoisted
+			path.join(CLI_DIR, '../..'),
 		];
 
 		for (const nodeModulesDir of basePathsToScan) {

@@ -252,7 +252,7 @@ export function getPollStartDate(lastTimeChecked: string | undefined): string {
 		return DateTime.now().toISO();
 	}
 	const safetyMarginMinutes = 15;
-	return DateTime.fromISO(lastTimeChecked).minus({ minutes: safetyMarginMinutes }).toISO();
+	return DateTime.fromISO(lastTimeChecked).minus({ minutes: safetyMarginMinutes }).toISO() || '';
 }
 
 /**

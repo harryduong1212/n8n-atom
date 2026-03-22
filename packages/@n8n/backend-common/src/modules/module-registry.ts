@@ -68,7 +68,12 @@ export class ModuleRegistry {
 
 		try {
 			// docker + tests
-			const n8nPackagePath = require.resolve('n8n/package.json');
+			let n8nPackagePath: string;
+			try {
+				n8nPackagePath = require.resolve('n8n/package.json');
+			} catch {
+				n8nPackagePath = require.resolve('@atom8n/n8n/package.json');
+			}
 			const n8nRoot = path.dirname(n8nPackagePath);
 			const srcDirExists = existsSync(path.join(n8nRoot, 'src'));
 			const dir = process.env.NODE_ENV === 'test' && srcDirExists ? 'src' : 'dist';

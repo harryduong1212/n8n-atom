@@ -4,15 +4,17 @@ import { Service } from '@n8n/di';
 import { UnexpectedError } from 'n8n-workflow';
 import type WebSocket from 'ws';
 
+import { ExtendedWebSocket } from '@/interfaces';
+
 import { AbstractPush } from './abstract.push';
 
-function heartbeat(this: WebSocket) {
+function heartbeat(this: ExtendedWebSocket) {
 	this.isAlive = true;
 }
 
 @Service()
-export class WebSocketPush extends AbstractPush<WebSocket> {
-	add(pushRef: string, userId: User['id'], connection: WebSocket) {
+export class WebSocketPush extends AbstractPush<ExtendedWebSocket> {
+	add(pushRef: string, userId: User['id'], connection: ExtendedWebSocket) {
 		connection.isAlive = true;
 		connection.on('pong', heartbeat);
 
@@ -64,15 +66,19 @@ export class WebSocketPush extends AbstractPush<WebSocket> {
 		connection.on('message', onMessage);
 	}
 
-	protected close(connection: WebSocket): void {
+	protected close(connection: ExtendedWebSocket): void {
 		connection.close();
 	}
 
-	protected sendToOneConnection(connection: WebSocket, data: string, asBinary: boolean): void {
+	protected sendToOneConnection(
+		connection: ExtendedWebSocket,
+		data: string,
+		asBinary: boolean,
+	): void {
 		connection.send(data, { binary: asBinary });
 	}
 
-	protected ping(connection: WebSocket): void {
+	protected ping(connection: ExtendedWebSocket): void {
 		// If a connection did not respond with a `PONG` in the last 60 seconds, disconnect
 		if (!connection.isAlive) {
 			return connection.terminate();

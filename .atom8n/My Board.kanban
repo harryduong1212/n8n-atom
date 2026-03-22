@@ -8,20 +8,11 @@
       "boardId": "",
       "tasks": [
         {
-          "id": "task_n9npd2_mjs9q9al",
-          "title": "CLI to execute JSON file",
-          "description": "",
+          "id": "task_w1ovlf_mkmvb251",
+          "title": "git merge upstream",
+          "description": "git merge uptream(branch release/2.2.3) to current branch",
           "priority": "MEDIUM",
           "order": 0,
-          "columnId": "col_3rc1nh_mjs9q4pl",
-          "assigneeId": null
-        },
-        {
-          "id": "task_a0rkti_mjs9qlf8",
-          "title": "Remove authentication/login",
-          "description": "",
-          "priority": "MEDIUM",
-          "order": 1,
           "columnId": "col_3rc1nh_mjs9q4pl",
           "assigneeId": null
         }
@@ -37,6 +28,24 @@
           "id": "task_f4zduc_mjs9rr94",
           "title": "Git pull/merge from upstream",
           "description": "- keep in mind to the keep the core features when resolve conflict\n- Auto resolve conflict yourself",
+          "priority": "MEDIUM",
+          "order": 1,
+          "columnId": "col_3y6a3v_mjs9q4pl",
+          "assigneeId": null
+        },
+        {
+          "id": "task_a0rkti_mjs9qlf8",
+          "title": "Remove authentication/login",
+          "description": "",
+          "priority": "MEDIUM",
+          "order": 2,
+          "columnId": "col_3y6a3v_mjs9q4pl",
+          "assigneeId": null
+        },
+        {
+          "id": "task_n9npd2_mjs9q9al",
+          "title": "CLI to execute JSON file",
+          "description": "",
           "priority": "MEDIUM",
           "order": 0,
           "columnId": "col_3y6a3v_mjs9q4pl",
