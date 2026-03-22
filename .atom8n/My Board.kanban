@@ -24,6 +24,15 @@
           "order": 1,
           "columnId": "col_3rc1nh_mjs9q4pl",
           "assigneeId": null
+        },
+        {
+          "id": "task_jk3aro_mn1tt329",
+          "title": "Support node lib",
+          "description": "can we supprort this:\n\n```\nimport n8n from ''\n\nvar input = 'world'\nvar output = n8n.run(filen8n, input);\nconsole.log(output) // hello world\n```",
+          "priority": "MEDIUM",
+          "order": 2,
+          "columnId": "col_3rc1nh_mjs9q4pl",
+          "assigneeId": null
         }
       ]
     },
