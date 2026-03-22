@@ -12,10 +12,10 @@
 import n8n from './dist/index.js';
 
 const defaultWorkflow =
-	'/Users/Shared/Data/Syncthing/MyApp/n8n-solution/n8n-sample/Untitled-1772372841552.n8n';
+	'/Users/Shared/Data/Syncthing/MyApp/n8n-solution/n8n-sample/Untitled-1774177680378.n8n';
 
 const filePath = process.argv[2] || defaultWorkflow;
-const input = process.argv[3] || undefined;
+const input = process.argv[3] || {text: 'world'};
 
 console.log('=== n8n Node Lib Test ===');
 console.log(`File:  ${filePath}`);

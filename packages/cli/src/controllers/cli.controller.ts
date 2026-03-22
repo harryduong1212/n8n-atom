@@ -9,7 +9,7 @@ import {
 import { Get, Post, RestController } from '@n8n/decorators';
 import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import type { IWorkflowBase, IWorkflowExecutionDataProcess } from 'n8n-workflow';
+import type { IWorkflowBase, IWorkflowExecutionDataProcess, IDataObject } from 'n8n-workflow';
 import { CHAT_TRIGGER_NODE_TYPE, createRunExecutionData } from 'n8n-workflow';
 
 import { ActiveExecutions } from '@/active-executions';
@@ -20,6 +20,8 @@ import { WorkflowRunner } from '@/workflow-runner';
 interface CliRunBody {
 	workflowData: IWorkflowBase;
 	chatInput?: string;
+	/** Arbitrary input data to inject into the trigger node (for executeWorkflowTrigger etc.) */
+	inputData?: IDataObject;
 }
 
 /**
@@ -92,6 +94,9 @@ export class CliController {
 
 		const fileData = body.workflowData;
 		const chatInput = body.chatInput;
+		const inputData = body.inputData;
+
+		this.logger.info(`[cli] inputData: ${inputData ? JSON.stringify(inputData) : '(none)'}`);
 
 		// Validate basic workflow structure
 		if (!fileData.nodes || !Array.isArray(fileData.nodes)) {
@@ -189,14 +194,48 @@ export class CliController {
 
 				executionId = await this.workflowRunner.run(runData);
 			} else {
-				// Regular triggers: use executeManually-style approach with pinData
+				// Regular triggers: inject input data via nodeExecutionStack
+				// (NOT pinData — pinData skips the node's execute(), losing schema processing)
 				this.logger.info('[cli] Using trigger execution (regular trigger)');
+
+				// Build trigger input data from inputData or chatInput
+				const triggerData: IDataObject = (inputData ?? {}) as IDataObject;
+				if (chatInput !== undefined && !inputData) {
+					triggerData.chatInput = chatInput;
+				}
+
+				this.logger.info(`[cli] Trigger input data: ${JSON.stringify(triggerData)}`);
+
+				const executionData = createRunExecutionData({
+					startData: {},
+					resultData: {
+						pinData: { [triggerNode.name]: [{ json: triggerData }] },
+						runData: {},
+					},
+					executionData: {
+						contextData: {},
+						metadata: {},
+						nodeExecutionStack: [
+							{
+								node: triggerNode,
+								data: {
+									main: [[{ json: triggerData }]],
+								},
+								source: null,
+							},
+						],
+						waitingExecution: {},
+						waitingExecutionSource: {},
+					},
+				});
 
 				const runData: IWorkflowExecutionDataProcess = {
 					executionMode: 'trigger',
 					workflowData: workflow,
 					userId: user.id,
-					triggerToStartFrom: { name: triggerNode.name },
+					startNodes: [{ name: triggerNode.name, sourceData: null }],
+					pinData: { [triggerNode.name]: [{ json: triggerData }] },
+					executionData,
 				};
 
 				executionId = await this.workflowRunner.run(runData);

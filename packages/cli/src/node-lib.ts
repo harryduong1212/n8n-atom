@@ -45,14 +45,18 @@ interface N8nApiResponse {
  * Run an n8n workflow file programmatically.
  *
  * @param filePath - Path to the .n8n workflow JSON file
- * @param input - Optional input string (used as chatInput for chat/webhook triggers)
+ * @param input - Optional input: string (chatInput) or object (injected as trigger data)
  * @param options - Optional configuration (port, baseUrl)
  * @returns The output data from the last executed node (array of JSON items)
  */
-async function run(filePath: string, input?: string, options?: N8nRunOptions): Promise<unknown[]> {
+async function run(
+	filePath: string,
+	input?: string | Record<string, unknown>,
+	options?: N8nRunOptions,
+): Promise<unknown[]> {
 	console.log(`${LOG_PREFIX} ── RUN START ──`);
 	console.log(`${LOG_PREFIX} filePath: "${filePath}"`);
-	console.log(`${LOG_PREFIX} input: ${input !== undefined ? `"${input}"` : '(none)'}`);
+	console.log(`${LOG_PREFIX} input: ${input !== undefined ? JSON.stringify(input) : '(none)'}`);
 
 	// ── Step 1: Resolve and read the workflow file ───────────────────
 	const resolvedPath = path.resolve(filePath);
@@ -109,10 +113,15 @@ async function run(filePath: string, input?: string, options?: N8nRunOptions): P
 	const runUrl = `${serverUrl}/rest/cli/run`;
 	console.log(`${LOG_PREFIX} Executing workflow: POST ${runUrl}`);
 
-	const requestBody = {
-		workflowData,
-		...(input !== undefined ? { chatInput: input } : {}),
-	};
+	const requestBody: Record<string, unknown> = { workflowData };
+	if (input !== undefined) {
+		if (typeof input === 'string') {
+			requestBody.chatInput = input;
+		} else {
+			requestBody.inputData = input;
+		}
+	}
+	console.log(`${LOG_PREFIX} Request body keys: ${Object.keys(requestBody).join(', ')}`);
 
 	let response: Response;
 	try {
