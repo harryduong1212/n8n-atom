@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { BaseCommand } from './base-command';
 
 const flagsSchema = z.object({
-	file: z.string().describe('Path to the .n8n workflow file to expose as an MCP tool'),
+	file: z.string().describe('Path to the .n8n workflow file to expose as an MCP tool').optional(),
 });
 
 @Command({
@@ -17,7 +17,7 @@ const flagsSchema = z.object({
 		'Starts an MCP (Model Context Protocol) server over stdio, exposing a .n8n workflow file ' +
 		'as a callable tool. The server reads JSON-RPC from stdin and writes to stdout. ' +
 		'Designed to be used as an MCP server command in MCP client configurations.',
-	examples: ['--file=workflow.n8n', '--file=/path/to/my-workflow.n8n'],
+	examples: ['workflow.n8n', '--file=workflow.n8n', '/path/to/my-workflow.n8n'],
 	flagsSchema,
 })
 export class Mcp extends BaseCommand<z.infer<typeof flagsSchema>> {
@@ -32,12 +32,18 @@ export class Mcp extends BaseCommand<z.infer<typeof flagsSchema>> {
 	async run() {
 		const { flags } = this;
 
-		if (!flags.file) {
-			throw new UserError('The --file flag is required. Provide a path to the .n8n workflow file.');
+		// Resolve file path: prefer --file flag, fall back to positional arg
+		const fileArg = flags.file || this.resolvePositionalFile();
+		this.logStderr(`[mcp] Resolved file argument: "${fileArg ?? '(none)'}"`);
+
+		if (!fileArg) {
+			throw new UserError(
+				'No workflow file specified. Usage: n8n mcp <file.n8n> or n8n mcp --file=<file.n8n>',
+			);
 		}
 
 		// ── Step 1: Read and parse the .n8n workflow file ──────────────
-		const filePath = path.resolve(flags.file);
+		const filePath = path.resolve(fileArg);
 		this.logStderr(`[mcp] ── STARTING MCP SERVER ──`);
 		this.logStderr(`[mcp] Workflow file: ${filePath}`);
 
@@ -265,6 +271,26 @@ export class Mcp extends BaseCommand<z.infer<typeof flagsSchema>> {
 		});
 
 		this.logStderr(`[mcp] Server stopped.`);
+	}
+
+	/**
+	 * Resolve the workflow file from positional arguments in process.argv.
+	 * Looks for the first arg after 'mcp' that looks like a file path.
+	 */
+	private resolvePositionalFile(): string | undefined {
+		const argv = process.argv;
+		const mcpIndex = argv.indexOf('mcp');
+		if (mcpIndex === -1) return undefined;
+
+		// Look at args after 'mcp', skip anything starting with '--'
+		for (let i = mcpIndex + 1; i < argv.length; i++) {
+			const arg = argv[i];
+			if (!arg.startsWith('--') && !arg.startsWith('-')) {
+				this.logStderr(`[mcp] Found positional file argument: "${arg}"`);
+				return arg;
+			}
+		}
+		return undefined;
 	}
 
 	/**
