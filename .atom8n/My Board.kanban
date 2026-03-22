@@ -15,6 +15,15 @@
           "order": 0,
           "columnId": "col_3rc1nh_mjs9q4pl",
           "assigneeId": null
+        },
+        {
+          "id": "task_97cqhl_mn1kjkgh",
+          "title": "add CLI to run n8n file",
+          "description": "enable user to run n8n file with this command\n\n```\nn8n run \"file.n8n\"\n```\n\nexample file: /Users/Shared/Data/Syncthing/MyApp/n8n-solution/n8n-sample/Untitled-1772372841552.n8n\n\nit will check if id exist, if exist, it will compare the modifed time of the file vs saved time of workflow, choose the latest\n\nIf id not exist, fall back to name to search, if still not exist create a new workflow in server.\n\nThen finally run the workflow in server and return output of workflow",
+          "priority": "MEDIUM",
+          "order": 1,
+          "columnId": "col_3rc1nh_mjs9q4pl",
+          "assigneeId": null
         }
       ]
     },
