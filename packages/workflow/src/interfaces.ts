@@ -1146,7 +1146,7 @@ export interface ILoadOptionsFunctions extends FunctionsBase {
 	helpers: RequestHelperFunctions & SSHTunnelFunctions & DataTableProxyFunctions;
 }
 
-export type FieldValueOption = { name: string; type: FieldType | 'any' };
+export type FieldValueOption = { name: string; type: FieldType | 'any'; defaultValue?: string };
 
 export type IWorkflowNodeContext = ExecuteFunctions.GetNodeParameterFn &
 	Pick<FunctionsBase, 'getNode' | 'getWorkflow'>;

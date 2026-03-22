@@ -195,6 +195,13 @@ export async function loadWorkflowInputMappings(
 				field.type = currentWorkflowInput.type;
 			}
 
+			if (
+				currentWorkflowInput.defaultValue !== undefined &&
+				currentWorkflowInput.defaultValue !== ''
+			) {
+				field.defaultValue = currentWorkflowInput.defaultValue;
+			}
+
 			return field;
 		});
 	}

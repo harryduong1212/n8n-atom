@@ -38,7 +38,7 @@ describe('ExecuteWorkflowTrigger', () => {
 		} = {
 			fields: [
 				{ name: 'value1', type: 'string' },
-				{ name: 'value2', type: 'number' },
+				{ name: 'value2', type: 'number', defaultValue: '42' },
 				{ name: 'foo', type: 'string' },
 			],
 		};
@@ -47,8 +47,8 @@ describe('ExecuteWorkflowTrigger', () => {
 		const result = await new ExecuteWorkflowTrigger().execute.call(executeFns);
 		const expected = [
 			[
-				{ index: 0, json: { value1: null, value2: null, foo: mockInputData[0].json.foo } },
-				{ index: 1, json: { value1: null, value2: null, foo: mockInputData[1].json.foo } },
+				{ index: 0, json: { value1: null, value2: '42', foo: mockInputData[0].json.foo } },
+				{ index: 1, json: { value1: null, value2: '42', foo: mockInputData[1].json.foo } },
 			],
 		];
 

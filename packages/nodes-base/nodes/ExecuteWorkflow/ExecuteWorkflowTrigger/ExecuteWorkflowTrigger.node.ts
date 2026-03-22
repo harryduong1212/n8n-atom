@@ -187,6 +187,15 @@ export class ExecuteWorkflowTrigger implements INodeType {
 								default: 'string',
 								noDataExpression: true,
 							},
+							{
+								displayName: 'Default Value',
+								name: 'defaultValue',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g. default text',
+								description: 'Default value to use when no input is provided for this field',
+								noDataExpression: true,
+							},
 						],
 					},
 				],
@@ -222,7 +231,14 @@ export class ExecuteWorkflowTrigger implements INodeType {
 			const newKeys = new Set(newParams.fields.map((x) => x.name));
 			const itemsInSchema: INodeExecutionData[] = inputData.map(({ json, binary }, index) => ({
 				json: {
-					...Object.fromEntries(newParams.fields.map((x) => [x.name, FALLBACK_DEFAULT_VALUE])),
+					...Object.fromEntries(
+						newParams.fields.map((x) => [
+							x.name,
+							x.defaultValue !== undefined && x.defaultValue !== ''
+								? x.defaultValue
+								: FALLBACK_DEFAULT_VALUE,
+						]),
+					),
 					// Need to trim to the expected schema to support legacy Execute Workflow callers passing through all their data
 					// which we do not want to expose past this node.
 					...pickBy(json, (_value, key) => newKeys.has(key)),
