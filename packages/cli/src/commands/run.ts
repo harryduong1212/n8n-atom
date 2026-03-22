@@ -280,6 +280,7 @@ export class Run extends BaseCommand<z.infer<typeof flagsSchema>> {
 			data?: { executionId?: string };
 			executionId?: string;
 			id?: string;
+			waitingForWebhook?: boolean;
 		};
 		const executionId =
 			executeResult.data?.executionId || executeResult.executionId || executeResult.id;
@@ -288,6 +289,12 @@ export class Run extends BaseCommand<z.infer<typeof flagsSchema>> {
 		);
 
 		if (!executionId) {
+			if (executeResult.waitingForWebhook) {
+				this.logger.info(
+					'[run] Workflow is waiting for a webhook trigger. This trigger type requires external input (e.g. chat message). ' +
+						'The CLI cannot provide this automatically. Please use the n8n UI to trigger this workflow.',
+				);
+			}
 			this.logger.info(`[run] Full API response: ${JSON.stringify(executeResult, null, 2)}`);
 			throw new UserError('[run] Could not determine execution ID from API response.');
 		}

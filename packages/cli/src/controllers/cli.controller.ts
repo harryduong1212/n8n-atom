@@ -2,6 +2,7 @@ import { Logger } from '@n8n/backend-common';
 import { WorkflowRepository } from '@n8n/db';
 import { Get, Post, Param, RestController } from '@n8n/decorators';
 import type { Request, Response } from 'express';
+import { CHAT_TRIGGER_NODE_TYPE, createRunExecutionData } from 'n8n-workflow';
 
 import { OwnershipService } from '@/services/ownership.service';
 import { WorkflowExecutionService } from '@/workflows/workflow-execution.service';
@@ -19,6 +20,19 @@ export class CliController {
 		private readonly ownershipService: OwnershipService,
 		private readonly workflowExecutionService: WorkflowExecutionService,
 	) {}
+
+	/**
+	 * Check if a trigger node is a webhook-based trigger that needs special handling.
+	 * Webhook/chat triggers return { waitingForWebhook: true } from executeManually(),
+	 * so we need to inject mock data and use executeChatWorkflow() instead.
+	 */
+	private isWebhookBasedTrigger(nodeType: string): boolean {
+		return (
+			nodeType === CHAT_TRIGGER_NODE_TYPE ||
+			nodeType === 'n8n-nodes-base.webhook' ||
+			nodeType.toLowerCase().includes('webhook')
+		);
+	}
 
 	/**
 	 * Execute a workflow by ID. Restricted to localhost only.
@@ -79,20 +93,69 @@ export class CliController {
 		this.logger.info(`[cli-controller] Executing as instance owner: ${user.id}`);
 
 		try {
-			// Use the same execution service as the manual run endpoint
-			// Provide triggerToStartFrom so it goes through Case 2 (full execution from known trigger)
-			const result = await this.workflowExecutionService.executeManually(
-				{
-					workflowData: workflow,
-					triggerToStartFrom: {
-						name: triggerNode.name,
-					},
-				} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-				user,
-			);
+			// Check if this is a webhook-based trigger (chatTrigger, webhook, etc.)
+			// These triggers return { waitingForWebhook: true } from executeManually(),
+			// so we bypass the webhook mechanism by injecting mock data and using executeChatWorkflow()
+			if (this.isWebhookBasedTrigger(triggerNode.type)) {
+				this.logger.info(
+					`[cli-controller] Webhook-based trigger detected (${triggerNode.type}). Using direct execution with mock data.`,
+				);
 
-			this.logger.info(`[cli-controller] Execution triggered: ${JSON.stringify(result)}`);
-			res.json(result);
+				// Build mock input data for the trigger node, similar to how chat-hub does it
+				const isChatTrigger = triggerNode.type === CHAT_TRIGGER_NODE_TYPE;
+				const mockInputData = isChatTrigger
+					? {
+							sessionId: `cli-${Date.now()}`,
+							action: 'sendMessage',
+							chatInput: (req.body as Record<string, unknown>)?.chatInput ?? 'CLI execution',
+						}
+					: {
+							headers: {},
+							params: {},
+							query: {},
+							body: (req.body as Record<string, unknown>) ?? {},
+						};
+
+				const executionData = createRunExecutionData({
+					executionData: {
+						nodeExecutionStack: [
+							{
+								node: triggerNode,
+								data: {
+									main: [[{ json: mockInputData }]],
+								},
+								source: null,
+							},
+						],
+					},
+					manualData: {
+						userId: user.id,
+					},
+				});
+
+				const result = await this.workflowExecutionService.executeChatWorkflow(
+					workflow,
+					executionData,
+					user,
+				);
+
+				this.logger.info(`[cli-controller] Execution triggered: ${JSON.stringify(result)}`);
+				res.json(result);
+			} else {
+				// Regular trigger: use executeManually() as before
+				const result = await this.workflowExecutionService.executeManually(
+					{
+						workflowData: workflow,
+						triggerToStartFrom: {
+							name: triggerNode.name,
+						},
+					} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+					user,
+				);
+
+				this.logger.info(`[cli-controller] Execution triggered: ${JSON.stringify(result)}`);
+				res.json(result);
+			}
 		} catch (error) {
 			this.logger.error(
 				`[cli-controller] Execution failed: ${error instanceof Error ? error.message : String(error)}`,
