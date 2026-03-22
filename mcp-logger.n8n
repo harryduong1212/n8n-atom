@@ -1,0 +1,86 @@
+{
+  "name": "MCP Logger",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "mcp-logger",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "a1000000-0001-4000-8000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "mcp-logger-webhook"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:6277/logs/current",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "page",
+              "value": "={{ $json.query?.page ?? 1 }}"
+            },
+            {
+              "name": "limit",
+              "value": "={{ $json.query?.limit ?? 50 }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "a1000000-0002-4000-8000-000000000002",
+      "name": "Fetch Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Format the fetched logs into a readable response\nconst items = $input.all();\nconst logData = items.map(item => item.json);\n\nreturn [{\n  json: {\n    message: 'Successfully fetched logs',\n    data: logData.length === 1 ? logData[0] : logData\n  }\n}];"
+      },
+      "id": "a1000000-0003-4000-8000-000000000003",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Logs": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
