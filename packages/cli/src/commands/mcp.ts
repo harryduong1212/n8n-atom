@@ -94,7 +94,7 @@ export class Mcp extends BaseCommand<z.infer<typeof flagsSchema>> {
 				: 'n8n MCP Server';
 
 		const server = new McpServer({
-			name: serverName,
+			name: 'n8n MCP Server',
 			version: '1.0.0',
 		});
 
