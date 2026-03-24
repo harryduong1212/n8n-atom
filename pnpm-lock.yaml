@@ -2876,6 +2876,15 @@ importers:
         specifier: ^0.0.35
         version: 0.0.35(patch_hash=bbd573be7e456224f369aafb4d66374523c4847964a4655a6a1654fd40e8b0f8)(vue@3.5.13(typescript@5.9.2))
 
+  packages/n8n-atom-cli:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.24.0
+        version: 1.24.0(zod@3.25.67)
+      zod:
+        specifier: 3.25.67
+        version: 3.25.67
+
   packages/n8n-atom-node: {}
 
   packages/node-dev:
@@ -18494,11 +18503,6 @@ packages:
     peerDependencies:
       zod: 3.25.67
 
-  zod-to-json-schema@3.24.6:
-    resolution: {integrity: sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==}
-    peerDependencies:
-      zod: 3.25.67
-
   zod-to-json-schema@3.25.0:
     resolution: {integrity: sha512-HvWtU2UG41LALjajJrML6uQejQhNJx+JBO9IflpSja4R03iNWfKXrj6W2h7ljuLyc1nKS+9yDyL/9tD1U/yBnQ==}
     peerDependencies:
@@ -22715,7 +22719,7 @@ snapshots:
   '@mistralai/mistralai@1.10.0':
     dependencies:
       zod: 3.25.67
-      zod-to-json-schema: 3.24.6(zod@3.25.67)
+      zod-to-json-schema: 3.25.0(zod@3.25.67)
 
   '@modelcontextprotocol/sdk@1.24.0(zod@3.25.67)':
     dependencies:
@@ -37614,10 +37618,6 @@ snapshots:
       zod: 3.25.67
 
   zod-to-json-schema@3.23.3(zod@3.25.67):
-    dependencies:
-      zod: 3.25.67
-
-  zod-to-json-schema@3.24.6(zod@3.25.67):
     dependencies:
       zod: 3.25.67
 
