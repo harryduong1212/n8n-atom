@@ -4,11 +4,13 @@
   "description": "Lightweight CLI to expose n8n workflow files as MCP (Model Context Protocol) servers",
   "type": "module",
   "bin": {
-    "n8n-mcp": "./bin/n8n-mcp.mjs"
+    "n8n-mcp": "./bin/n8n-mcp.mjs",
+    "n8n-run": "./bin/n8n-run.mjs"
   },
   "files": [
     "bin",
-    "mcp-server.mjs"
+    "mcp-server.mjs",
+    "run-workflow.mjs"
   ],
   "keywords": [
     "n8n",
