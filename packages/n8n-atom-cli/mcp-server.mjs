@@ -55,7 +55,18 @@ async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowT
 
 		if (isSubFlowTrigger) {
 			// Sub-flow: args are already structured from Zod schema, pass directly as inputData
-			requestBody.inputData = args;
+			// Merge default values for any missing fields
+			const triggerNode = workflowData.nodes?.find(
+				(n) => n.type === 'n8n-nodes-base.executeWorkflowTrigger',
+			);
+			const workflowInputs = triggerNode?.parameters?.workflowInputs?.values ?? [];
+			const mergedArgs = { ...args };
+			for (const field of workflowInputs) {
+				if (field.name && mergedArgs[field.name] === undefined && field.defaultValue !== undefined && field.defaultValue !== '') {
+					mergedArgs[field.name] = field.defaultValue;
+				}
+			}
+			requestBody.inputData = mergedArgs;
 		} else if (args.input !== undefined) {
 			if (isChatTrigger) {
 				requestBody.chatInput = String(args.input);

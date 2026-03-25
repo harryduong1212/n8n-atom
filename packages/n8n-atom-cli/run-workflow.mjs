@@ -91,6 +91,24 @@ export async function runWorkflow(filePath, options = {}) {
 		} catch {
 			requestBody.chatInput = input;
 		}
+	} else {
+		// No input provided — check for executeWorkflowTrigger with default values
+		const triggerNode = fileData.nodes?.find(
+			(n) => n.type === 'n8n-nodes-base.executeWorkflowTrigger',
+		);
+		if (triggerNode) {
+			const workflowInputs = triggerNode.parameters?.workflowInputs?.values ?? [];
+			const defaults = {};
+			for (const field of workflowInputs) {
+				if (field.name && field.defaultValue !== undefined && field.defaultValue !== '') {
+					defaults[field.name] = field.defaultValue;
+				}
+			}
+			if (Object.keys(defaults).length > 0) {
+				log(`Using default values: ${JSON.stringify(defaults)}`);
+				requestBody.inputData = defaults;
+			}
+		}
 	}
 
 	const response = await fetch(executeUrl, {
