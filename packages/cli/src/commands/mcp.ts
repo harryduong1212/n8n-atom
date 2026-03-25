@@ -121,33 +121,88 @@ export class Mcp extends BaseCommand<z.infer<typeof flagsSchema>> {
 			);
 			const triggerType = triggerNode?.type ?? 'unknown';
 			const isChatTrigger = triggerType === '@n8n/n8n-nodes-langchain.chatTrigger';
+			const isSubFlowTrigger = triggerType === 'n8n-nodes-base.executeWorkflowTrigger';
 
 			this.logStderr(`[mcp] Registering tool "${toolName}" (trigger: ${triggerType})`);
 
-			const inputSchemaShape = isChatTrigger
-				? { input: z.string().describe('Input text for the chat workflow') }
-				: { input: z.string().optional().describe('Input text or data for the workflow') };
+			// Build input schema based on trigger type
+			let inputSchemaShape: Record<string, z.ZodTypeAny>;
+			let description: string;
+
+			if (isSubFlowTrigger) {
+				// Extract workflowInputs from the trigger node parameters
+				const params = triggerNode?.parameters as Record<string, unknown> | undefined;
+				const workflowInputs = ((params?.workflowInputs as Record<string, unknown>)?.values ??
+					[]) as Array<{
+					name?: string;
+					type?: string;
+					defaultValue?: string;
+				}>;
+				inputSchemaShape = {};
+
+				for (const field of workflowInputs) {
+					const name = field.name;
+					if (!name) continue;
+
+					let zodType: z.ZodTypeAny;
+					switch (field.type) {
+						case 'number':
+							zodType = z.number();
+							break;
+						case 'boolean':
+							zodType = z.boolean();
+							break;
+						default:
+							zodType = z.string();
+					}
+
+					if (field.defaultValue !== undefined && field.defaultValue !== '') {
+						zodType = zodType.optional().describe(`${name} (default: ${field.defaultValue})`);
+					} else {
+						zodType = zodType.describe(name);
+					}
+					inputSchemaShape[name] = zodType;
+				}
+
+				// Fallback: if no workflowInputs defined, use generic input
+				if (Object.keys(inputSchemaShape).length === 0) {
+					inputSchemaShape = {
+						input: z.string().optional().describe('Input data for the workflow'),
+					};
+				}
+
+				description = `Execute the n8n workflow "${workflowData.name}". Provide the required input parameters.`;
+				this.logStderr(
+					`[mcp]   Sub-flow inputs: ${workflowInputs.map((f) => f.name).join(', ') || '(none)'}`,
+				);
+			} else if (isChatTrigger) {
+				inputSchemaShape = { input: z.string().describe('Input text for the chat workflow') };
+				description = `Execute the n8n workflow "${workflowData.name}". This is a chat-based workflow — provide input text.`;
+			} else {
+				inputSchemaShape = {
+					input: z.string().optional().describe('Input text or data for the workflow trigger'),
+				};
+				description = `Execute the n8n workflow "${workflowData.name}". Provide optional input text for the workflow trigger.`;
+			}
 
 			// Capture variables for the closure
 			const wfData = workflowData;
 			const wfIsChatTrigger = isChatTrigger;
+			const wfIsSubFlowTrigger = isSubFlowTrigger;
 			const wfToolName = toolName;
 
 			server.registerTool(
 				toolName,
 				{
-					description: `Execute the n8n workflow "${workflowData.name}". ${
-						isChatTrigger
-							? 'This is a chat-based workflow — provide input text.'
-							: 'Provide optional input text for the workflow trigger.'
-					}`,
+					description,
 					inputSchema: inputSchemaShape,
 				},
-				async (args: { input?: string }) => {
+				async (args: Record<string, unknown>) => {
 					return await this.executeWorkflowTool(
 						wfToolName,
 						wfData,
 						wfIsChatTrigger,
+						wfIsSubFlowTrigger,
 						serverUrl,
 						args,
 					);
@@ -187,8 +242,9 @@ export class Mcp extends BaseCommand<z.infer<typeof flagsSchema>> {
 		toolName: string,
 		workflowData: IWorkflowBase,
 		isChatTrigger: boolean,
+		isSubFlowTrigger: boolean,
 		serverUrl: string,
-		args: { input?: string },
+		args: Record<string, unknown>,
 	) {
 		this.logStderr(`[mcp] ── TOOL CALL: "${toolName}" ──`);
 		this.logStderr(`[mcp] Input: ${JSON.stringify(args)}`);
@@ -208,8 +264,10 @@ export class Mcp extends BaseCommand<z.infer<typeof flagsSchema>> {
 
 			const requestBody: Record<string, unknown> = { workflowData };
 
-			// Pass input based on trigger type
-			if (args.input !== undefined) {
+			if (isSubFlowTrigger) {
+				// Sub-flow: args are already structured from Zod schema, pass directly as inputData
+				requestBody.inputData = args;
+			} else if (args.input !== undefined) {
 				if (isChatTrigger) {
 					requestBody.chatInput = String(args.input);
 				} else {

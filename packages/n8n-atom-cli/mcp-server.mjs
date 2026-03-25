@@ -34,7 +34,7 @@ function sanitizeToolName(name) {
 /**
  * Execute a workflow via the n8n /rest/cli/run API.
  */
-async function executeWorkflow(toolName, workflowData, isChatTrigger, serverUrl, args) {
+async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowTrigger, serverUrl, args) {
 	logStderr(`── TOOL CALL: "${toolName}" ──`);
 	logStderr(`Input: ${JSON.stringify(args)}`);
 
@@ -53,8 +53,10 @@ async function executeWorkflow(toolName, workflowData, isChatTrigger, serverUrl,
 
 		const requestBody = { workflowData };
 
-		// Pass input based on trigger type
-		if (args.input !== undefined) {
+		if (isSubFlowTrigger) {
+			// Sub-flow: args are already structured from Zod schema, pass directly as inputData
+			requestBody.inputData = args;
+		} else if (args.input !== undefined) {
 			if (isChatTrigger) {
 				requestBody.chatInput = String(args.input);
 			} else {
@@ -226,30 +228,72 @@ export async function startMcpServer(filePaths, options = {}) {
 		);
 		const triggerType = triggerNode?.type ?? 'unknown';
 		const isChatTrigger = triggerType === '@n8n/n8n-nodes-langchain.chatTrigger';
+		const isSubFlowTrigger = triggerType === 'n8n-nodes-base.executeWorkflowTrigger';
 
 		logStderr(`Registering tool "${toolName}" (trigger: ${triggerType})`);
 
-		const inputSchemaShape = isChatTrigger
-			? { input: z.string().describe('Input text for the chat workflow') }
-			: { input: z.string().optional().describe('Input text or data for the workflow') };
+		// Build input schema based on trigger type
+		let inputSchemaShape;
+		let description;
+
+		if (isSubFlowTrigger) {
+			// Extract workflowInputs from the trigger node parameters
+			const workflowInputs = triggerNode.parameters?.workflowInputs?.values ?? [];
+			inputSchemaShape = {};
+
+			for (const field of workflowInputs) {
+				const name = field.name;
+				if (!name) continue;
+
+				let zodType;
+				switch (field.type) {
+					case 'number':
+						zodType = z.number();
+						break;
+					case 'boolean':
+						zodType = z.boolean();
+						break;
+					default:
+						zodType = z.string();
+				}
+
+				if (field.defaultValue !== undefined && field.defaultValue !== '') {
+					zodType = zodType.optional().describe(`${name} (default: ${field.defaultValue})`);
+				} else {
+					zodType = zodType.describe(name);
+				}
+				inputSchemaShape[name] = zodType;
+			}
+
+			// Fallback: if no workflowInputs defined, use generic input
+			if (Object.keys(inputSchemaShape).length === 0) {
+				inputSchemaShape = { input: z.string().optional().describe('Input data for the workflow') };
+			}
+
+			description = `Execute the n8n workflow "${workflowData.name}". Provide the required input parameters.`;
+			logStderr(`  Sub-flow inputs: ${workflowInputs.map((f) => f.name).join(', ') || '(none)'}`);
+		} else if (isChatTrigger) {
+			inputSchemaShape = { input: z.string().describe('Input text for the chat workflow') };
+			description = `Execute the n8n workflow "${workflowData.name}". This is a chat-based workflow — provide input text.`;
+		} else {
+			inputSchemaShape = { input: z.string().optional().describe('Input text or data for the workflow trigger') };
+			description = `Execute the n8n workflow "${workflowData.name}". Provide optional input text for the workflow trigger.`;
+		}
 
 		// Capture for closure
 		const wfData = workflowData;
 		const wfIsChatTrigger = isChatTrigger;
+		const wfIsSubFlowTrigger = isSubFlowTrigger;
 		const wfToolName = toolName;
 
 		server.registerTool(
 			toolName,
 			{
-				description: `Execute the n8n workflow "${workflowData.name}". ${
-					isChatTrigger
-						? 'This is a chat-based workflow — provide input text.'
-						: 'Provide optional input text for the workflow trigger.'
-				}`,
+				description,
 				inputSchema: inputSchemaShape,
 			},
 			async (args) => {
-				return await executeWorkflow(wfToolName, wfData, wfIsChatTrigger, serverUrl, args);
+				return await executeWorkflow(wfToolName, wfData, wfIsChatTrigger, wfIsSubFlowTrigger, serverUrl, args);
 			},
 		);
 	}
