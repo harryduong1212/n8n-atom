@@ -83,11 +83,11 @@ for (let i = 0; i < args.length; i++) {
 		continue;
 	}
 
-	// First positional argument = workflow file
+	// First positional argument = workflow file, second = input
 	if (!file) {
 		file = arg;
-	} else {
-		log(`Warning: ignoring extra argument "${arg}"`);
+	} else if (!input) {
+		input = arg;
 	}
 }
 

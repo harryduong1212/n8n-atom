@@ -112,6 +112,7 @@ OPTIONS
 			if (arg === '--port') { port = parseInt(args[++i], 10); continue; }
 			if (arg.startsWith('-')) continue;
 			if (!file) file = arg;
+			else if (!input) input = arg;
 		}
 
 		if (!file) {

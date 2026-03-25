@@ -77,8 +77,21 @@ export async function runWorkflow(filePath, options = {}) {
 
 	const requestBody = {
 		workflowData: fileData,
-		chatInput: input,
 	};
+
+	// Pass input based on content: JSON objects → inputData, strings → chatInput
+	if (input !== undefined) {
+		try {
+			const parsed = JSON.parse(input);
+			if (typeof parsed === 'object' && parsed !== null) {
+				requestBody.inputData = parsed;
+			} else {
+				requestBody.chatInput = String(input);
+			}
+		} catch {
+			requestBody.chatInput = input;
+		}
+	}
 
 	const response = await fetch(executeUrl, {
 		method: 'POST',
