@@ -111,6 +111,13 @@ export async function runWorkflow(filePath, options = {}) {
 		}
 	}
 
+	// Auto-inject workflow filepath into inputData
+	if (!requestBody.inputData) {
+		requestBody.inputData = {};
+	}
+	requestBody.inputData.__filepath = resolvedPath;
+	requestBody.inputData.__dirpath = path.dirname(resolvedPath);
+
 	const response = await fetch(executeUrl, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },

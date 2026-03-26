@@ -34,7 +34,7 @@ function sanitizeToolName(name) {
 /**
  * Execute a workflow via the n8n /rest/cli/run API.
  */
-async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowTrigger, serverUrl, args) {
+async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowTrigger, serverUrl, args, workflowFilePath) {
 	logStderr(`── TOOL CALL: "${toolName}" ──`);
 	logStderr(`Input: ${JSON.stringify(args)}`);
 
@@ -83,6 +83,15 @@ async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowT
 					requestBody.chatInput = String(args.input);
 				}
 			}
+		}
+
+		// Auto-inject workflow filepath into inputData
+		if (!requestBody.inputData) {
+			requestBody.inputData = {};
+		}
+		if (workflowFilePath) {
+			requestBody.inputData.__filepath = workflowFilePath;
+			requestBody.inputData.__dirpath = path.dirname(workflowFilePath);
 		}
 
 		const response = await fetch(executeUrl, {
@@ -296,6 +305,7 @@ export async function startMcpServer(filePaths, options = {}) {
 		const wfIsChatTrigger = isChatTrigger;
 		const wfIsSubFlowTrigger = isSubFlowTrigger;
 		const wfToolName = toolName;
+		const wfFilePath = filePath;
 
 		server.registerTool(
 			toolName,
@@ -304,7 +314,7 @@ export async function startMcpServer(filePaths, options = {}) {
 				inputSchema: inputSchemaShape,
 			},
 			async (args) => {
-				return await executeWorkflow(wfToolName, wfData, wfIsChatTrigger, wfIsSubFlowTrigger, serverUrl, args);
+				return await executeWorkflow(wfToolName, wfData, wfIsChatTrigger, wfIsSubFlowTrigger, serverUrl, args, wfFilePath);
 			},
 		);
 	}
