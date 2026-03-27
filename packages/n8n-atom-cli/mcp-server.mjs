@@ -142,6 +142,14 @@ async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowT
 
 		logStderr(`Output items: ${outputItems.length}`);
 
+		// Sync workflow back to file if server had newer version
+		if (result.syncedWorkflow && workflowFilePath) {
+			logStderr(`Server had a newer workflow version — updating file: ${workflowFilePath}`);
+			const fileContent = JSON.stringify(result.syncedWorkflow, null, 2) + '\n';
+			fs.writeFileSync(workflowFilePath, fileContent, { encoding: 'utf8' });
+			logStderr(`File updated with server workflow.`);
+		}
+
 		if (!result.success) {
 			return {
 				content: [

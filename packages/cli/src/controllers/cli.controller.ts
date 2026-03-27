@@ -117,15 +117,15 @@ export class CliController {
 		try {
 			// ── Step 1: Sync workflow to DB ──────────────────────────────────
 			const user = await this.ownershipService.getInstanceOwner();
-			const workflowId = await this.syncWorkflow(fileData, user.id, fileModifiedAt);
-			const workflow = await this.workflowRepository.findOneBy({ id: workflowId });
+			const syncResult = await this.syncWorkflow(fileData, user.id, fileModifiedAt);
+			const workflow = await this.workflowRepository.findOneBy({ id: syncResult.id });
 
 			if (!workflow) {
 				res.status(500).json({ error: 'Failed to sync workflow to database' });
 				return;
 			}
 
-			this.logger.info(`[cli] Synced workflow: "${workflow.name}" (ID: ${workflowId})`);
+			this.logger.info(`[cli] Synced workflow: "${workflow.name}" (ID: ${syncResult.id})`);
 
 			// ── Step 2: Find trigger node ────────────────────────────────────
 			const triggerNode = workflow.nodes.find(
@@ -287,13 +287,20 @@ export class CliController {
 					unflattenData: true,
 				});
 
-				res.json({
+				const responsePayload: Record<string, unknown> = {
 					success: isSuccess,
 					executionId,
 					status: runResult.status,
 					executionTime: totalTime,
 					data: fullExecution?.data?.resultData ?? runResult.data.resultData,
-				});
+				};
+
+				// If server had a newer workflow, include it so the CLI can update the file
+				if (syncResult.syncedWorkflow) {
+					responsePayload.syncedWorkflow = syncResult.syncedWorkflow;
+				}
+
+				res.json(responsePayload);
 			} catch (error) {
 				if (timeoutId) clearTimeout(timeoutId);
 				throw error;
@@ -311,13 +318,13 @@ export class CliController {
 
 	/**
 	 * Sync workflow JSON to the database. Matches by ID, then by name, or creates new.
-	 * Returns the workflow ID.
+	 * Returns the workflow ID and optionally the server workflow data for syncing back to file.
 	 */
 	private async syncWorkflow(
 		fileData: IWorkflowBase,
 		userId: string,
 		fileModifiedAt?: string,
-	): Promise<string> {
+	): Promise<{ id: string; syncedWorkflow?: Record<string, unknown> }> {
 		// Try matching by ID
 		if (fileData.id && isWorkflowIdValid(fileData.id)) {
 			const existing = await this.workflowRepository.findOneBy({ id: fileData.id });
@@ -345,13 +352,23 @@ export class CliController {
 						name: fileData.name,
 						updatedAt: new Date(),
 					});
+					return { id: existing.id };
 				} else {
 					this.logger.info(
 						`[cli] Using existing workflow (ID match): ${existing.id} ` +
 							`(server is newer: ${serverUpdatedAt!.toISOString()} > ${fileUpdatedAt!.toISOString()})`,
 					);
+					return {
+						id: existing.id,
+						syncedWorkflow: {
+							name: existing.name,
+							nodes: existing.nodes,
+							connections: existing.connections,
+							settings: existing.settings,
+							pinData: existing.pinData ?? {},
+						},
+					};
 				}
-				return existing.id;
 			}
 		}
 
@@ -382,13 +399,23 @@ export class CliController {
 						name: fileData.name,
 						updatedAt: new Date(),
 					});
+					return { id: existing.id };
 				} else {
 					this.logger.info(
 						`[cli] Using existing workflow (name match): ${existing.id} ` +
 							`(server is newer: ${serverUpdatedAt!.toISOString()} > ${fileUpdatedAt!.toISOString()})`,
 					);
+					return {
+						id: existing.id,
+						syncedWorkflow: {
+							name: existing.name,
+							nodes: existing.nodes,
+							connections: existing.connections,
+							settings: existing.settings,
+							pinData: existing.pinData ?? {},
+						},
+					};
 				}
-				return existing.id;
 			}
 		}
 
@@ -425,7 +452,7 @@ export class CliController {
 			await transactionManager.save(sharedWorkflow);
 		});
 
-		return workflowId;
+		return { id: workflowId };
 	}
 
 	/**
