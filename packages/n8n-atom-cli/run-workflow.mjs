@@ -77,6 +77,7 @@ export async function runWorkflow(filePath, options = {}) {
 
 	const requestBody = {
 		workflowData: fileData,
+		fileModifiedAt: fileStat.mtime.toISOString(),
 	};
 
 	// Pass input based on content: JSON objects → inputData, strings → chatInput

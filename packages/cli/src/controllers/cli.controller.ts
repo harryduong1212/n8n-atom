@@ -22,6 +22,8 @@ interface CliRunBody {
 	chatInput?: string;
 	/** Arbitrary input data to inject into the trigger node (for executeWorkflowTrigger etc.) */
 	inputData?: IDataObject;
+	/** Actual file modification time from the filesystem (ISO string) */
+	fileModifiedAt?: string;
 }
 
 /**
@@ -95,6 +97,7 @@ export class CliController {
 		const fileData = body.workflowData;
 		const chatInput = body.chatInput;
 		const inputData = body.inputData;
+		const fileModifiedAt = body.fileModifiedAt;
 
 		this.logger.info(`[cli] inputData: ${inputData ? JSON.stringify(inputData) : '(none)'}`);
 
@@ -114,7 +117,7 @@ export class CliController {
 		try {
 			// ── Step 1: Sync workflow to DB ──────────────────────────────────
 			const user = await this.ownershipService.getInstanceOwner();
-			const workflowId = await this.syncWorkflow(fileData, user.id);
+			const workflowId = await this.syncWorkflow(fileData, user.id, fileModifiedAt);
 			const workflow = await this.workflowRepository.findOneBy({ id: workflowId });
 
 			if (!workflow) {
@@ -310,19 +313,30 @@ export class CliController {
 	 * Sync workflow JSON to the database. Matches by ID, then by name, or creates new.
 	 * Returns the workflow ID.
 	 */
-	private async syncWorkflow(fileData: IWorkflowBase, userId: string): Promise<string> {
+	private async syncWorkflow(
+		fileData: IWorkflowBase,
+		userId: string,
+		fileModifiedAt?: string,
+	): Promise<string> {
 		// Try matching by ID
 		if (fileData.id && isWorkflowIdValid(fileData.id)) {
 			const existing = await this.workflowRepository.findOneBy({ id: fileData.id });
 			if (existing) {
-				const fileUpdatedAt = fileData.updatedAt
-					? new Date(fileData.updatedAt as unknown as string)
-					: null;
+				const fileUpdatedAt = fileModifiedAt ? new Date(fileModifiedAt) : null;
 				const serverUpdatedAt = existing.updatedAt
 					? new Date(existing.updatedAt as unknown as string)
 					: null;
 
-				if (fileUpdatedAt && serverUpdatedAt && fileUpdatedAt > serverUpdatedAt) {
+				this.logger.info(
+					`[cli] Found existing workflow (ID match): ${existing.id}, ` +
+						`fileUpdatedAt=${fileUpdatedAt?.toISOString() ?? 'null'}, ` +
+						`serverUpdatedAt=${serverUpdatedAt?.toISOString() ?? 'null'}`,
+				);
+
+				// Update unless server is strictly newer than file
+				const shouldUpdate = !fileUpdatedAt || !serverUpdatedAt || fileUpdatedAt >= serverUpdatedAt;
+
+				if (shouldUpdate) {
 					this.logger.info(`[cli] Updating existing workflow (ID match): ${existing.id}`);
 					await this.workflowRepository.update(existing.id, {
 						nodes: fileData.nodes,
@@ -332,7 +346,10 @@ export class CliController {
 						updatedAt: new Date(),
 					});
 				} else {
-					this.logger.info(`[cli] Using existing workflow (ID match): ${existing.id}`);
+					this.logger.info(
+						`[cli] Using existing workflow (ID match): ${existing.id} ` +
+							`(server is newer: ${serverUpdatedAt!.toISOString()} > ${fileUpdatedAt!.toISOString()})`,
+					);
 				}
 				return existing.id;
 			}
@@ -342,14 +359,21 @@ export class CliController {
 		if (fileData.name) {
 			const existing = await this.workflowRepository.findOneBy({ name: fileData.name });
 			if (existing) {
-				const fileUpdatedAt = fileData.updatedAt
-					? new Date(fileData.updatedAt as unknown as string)
-					: null;
+				const fileUpdatedAt = fileModifiedAt ? new Date(fileModifiedAt) : null;
 				const serverUpdatedAt = existing.updatedAt
 					? new Date(existing.updatedAt as unknown as string)
 					: null;
 
-				if (fileUpdatedAt && serverUpdatedAt && fileUpdatedAt > serverUpdatedAt) {
+				this.logger.info(
+					`[cli] Found existing workflow (name match): ${existing.id}, ` +
+						`fileUpdatedAt=${fileUpdatedAt?.toISOString() ?? 'null'}, ` +
+						`serverUpdatedAt=${serverUpdatedAt?.toISOString() ?? 'null'}`,
+				);
+
+				// Update unless server is strictly newer than file
+				const shouldUpdate = !fileUpdatedAt || !serverUpdatedAt || fileUpdatedAt >= serverUpdatedAt;
+
+				if (shouldUpdate) {
 					this.logger.info(`[cli] Updating existing workflow (name match): ${existing.id}`);
 					await this.workflowRepository.update(existing.id, {
 						nodes: fileData.nodes,
@@ -359,7 +383,10 @@ export class CliController {
 						updatedAt: new Date(),
 					});
 				} else {
-					this.logger.info(`[cli] Using existing workflow (name match): ${existing.id}`);
+					this.logger.info(
+						`[cli] Using existing workflow (name match): ${existing.id} ` +
+							`(server is newer: ${serverUpdatedAt!.toISOString()} > ${fileUpdatedAt!.toISOString()})`,
+					);
 				}
 				return existing.id;
 			}

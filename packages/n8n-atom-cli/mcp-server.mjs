@@ -34,7 +34,7 @@ function sanitizeToolName(name) {
 /**
  * Execute a workflow via the n8n /rest/cli/run API.
  */
-async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowTrigger, serverUrl, args, workflowFilePath) {
+async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowTrigger, serverUrl, args, workflowFilePath, fileModifiedAt) {
 	logStderr(`── TOOL CALL: "${toolName}" ──`);
 	logStderr(`Input: ${JSON.stringify(args)}`);
 
@@ -51,7 +51,7 @@ async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowT
 		const executeUrl = `${serverUrl}/rest/cli/run`;
 		logStderr(`POST ${executeUrl}`);
 
-		const requestBody = { workflowData };
+		const requestBody = { workflowData, fileModifiedAt };
 
 		if (isSubFlowTrigger) {
 			// Sub-flow: args are already structured from Zod schema, pass directly as inputData
@@ -201,10 +201,11 @@ export async function startMcpServer(filePaths, options = {}) {
 		}
 
 		try {
+			const fileStat = fs.statSync(filePath);
 			const fileContent = fs.readFileSync(filePath, { encoding: 'utf8' });
 			const workflowData = JSON.parse(fileContent);
 			logStderr(`  ✓ "${workflowData.name}" (${workflowData.nodes?.length ?? 0} nodes)`);
-			workflows.push({ filePath, data: workflowData });
+			workflows.push({ filePath, data: workflowData, fileModifiedAt: fileStat.mtime.toISOString() });
 		} catch (error) {
 			throw new Error(
 				`Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
@@ -228,7 +229,7 @@ export async function startMcpServer(filePaths, options = {}) {
 	// ── Step 3: Register each workflow as a tool ─────────────────
 	const usedToolNames = new Set();
 
-	for (const { filePath, data: workflowData } of workflows) {
+	for (const { filePath, data: workflowData, fileModifiedAt } of workflows) {
 		let toolName = sanitizeToolName(workflowData.name || path.basename(filePath, '.n8n'));
 
 		// Ensure uniqueness
@@ -306,6 +307,7 @@ export async function startMcpServer(filePaths, options = {}) {
 		const wfIsSubFlowTrigger = isSubFlowTrigger;
 		const wfToolName = toolName;
 		const wfFilePath = filePath;
+		const wfFileModifiedAt = fileModifiedAt;
 
 		server.registerTool(
 			toolName,
@@ -314,7 +316,7 @@ export async function startMcpServer(filePaths, options = {}) {
 				inputSchema: inputSchemaShape,
 			},
 			async (args) => {
-				return await executeWorkflow(wfToolName, wfData, wfIsChatTrigger, wfIsSubFlowTrigger, serverUrl, args, wfFilePath);
+				return await executeWorkflow(wfToolName, wfData, wfIsChatTrigger, wfIsSubFlowTrigger, serverUrl, args, wfFilePath, wfFileModifiedAt);
 			},
 		);
 	}
