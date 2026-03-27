@@ -145,7 +145,21 @@ async function executeWorkflow(toolName, workflowData, isChatTrigger, isSubFlowT
 		// Sync workflow back to file if server had newer version
 		if (result.syncedWorkflow && workflowFilePath) {
 			logStderr(`Server had a newer workflow version — updating file: ${workflowFilePath}`);
-			const fileContent = JSON.stringify(result.syncedWorkflow, null, 2) + '\n';
+			const syncedData = result.syncedWorkflow;
+			// Strip runtime-injected __filepath and __dirpath from pinData
+			if (syncedData.pinData && typeof syncedData.pinData === 'object') {
+				for (const items of Object.values(syncedData.pinData)) {
+					if (Array.isArray(items)) {
+						for (const item of items) {
+							if (item.json) {
+								delete item.json.__filepath;
+								delete item.json.__dirpath;
+							}
+						}
+					}
+				}
+			}
+			const fileContent = JSON.stringify(syncedData, null, 2) + '\n';
 			fs.writeFileSync(workflowFilePath, fileContent, { encoding: 'utf8' });
 			logStderr(`File updated with server workflow.`);
 		}

@@ -188,14 +188,26 @@ export async function runWorkflow(filePath, options = {}) {
 	if (result.syncedWorkflow) {
 		log(`Server had a newer workflow version — updating file: ${resolvedPath}`);
 		const syncedData = result.syncedWorkflow;
-		// Write the server workflow back to file (preserve file format)
+		// Strip runtime-injected __filepath and __dirpath from pinData
+		if (syncedData.pinData && typeof syncedData.pinData === 'object') {
+			for (const items of Object.values(syncedData.pinData)) {
+				if (Array.isArray(items)) {
+					for (const item of items) {
+						if (item.json) {
+							delete item.json.__filepath;
+							delete item.json.__dirpath;
+						}
+					}
+				}
+			}
+		}
 		const fileContent = JSON.stringify(syncedData, null, 2) + '\n';
 		fs.writeFileSync(resolvedPath, fileContent, { encoding: 'utf8' });
 		log(`File updated with server workflow.`);
 	}
 
 	// Output the full result as JSON to stdout
-	console.log(JSON.stringify(result, null, 2));
+	// console.log(JSON.stringify(result, null, 2));
 	log(`Done.`);
 
 	return result;
