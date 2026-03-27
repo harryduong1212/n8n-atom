@@ -1,6 +1,6 @@
 {
   "name": "@n8n/typescript-config",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "type": "module",
   "files": [
     "tsconfig.backend.json",
