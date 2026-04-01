@@ -158,6 +158,10 @@ export class ChatHubModelsService {
 				const rawModels = await this.fetchMistralCloudModels(credentials, additionalData);
 				return { models: this.transformAndFilterModels(rawModels, 'mistralCloud') };
 			}
+			case 'cursorAgent': {
+				const rawModels = this.fetchCursorAgentModels();
+				return { models: this.transformAndFilterModels(rawModels, 'cursorAgent') };
+			}
 			case 'n8n':
 				return { models: await this.fetchAgentWorkflowsAsModels(user) };
 			case 'custom-agent':
@@ -711,6 +715,25 @@ export class ChatHubModelsService {
 			{},
 			credentials,
 		);
+	}
+
+	private fetchCursorAgentModels(): INodePropertyOptions[] {
+		return [
+			{ name: 'Auto', value: 'auto' },
+			{ name: 'Composer 1', value: 'composer-1' },
+			{ name: 'Composer 1.5', value: 'composer-1.5' },
+			{ name: 'Gemini 3 Flash', value: 'gemini-3-flash' },
+			{ name: 'Gemini 3 Pro', value: 'gemini-3-pro' },
+			{ name: 'GPT-5.1 Codex Max', value: 'gpt-5.1-codex-max' },
+			{ name: 'GPT-5.1 Codex Max High', value: 'gpt-5.1-codex-max-high' },
+			{ name: 'GPT-5.2', value: 'gpt-5.2' },
+			{ name: 'GPT-5.2 High', value: 'gpt-5.2-high' },
+			{ name: 'Grok', value: 'grok' },
+			{ name: 'Opus 4.5', value: 'opus-4.5' },
+			{ name: 'Opus 4.5 Thinking', value: 'opus-4.5-thinking' },
+			{ name: 'Sonnet 4.5', value: 'sonnet-4.5' },
+			{ name: 'Sonnet 4.5 Thinking', value: 'sonnet-4.5-thinking' },
+		];
 	}
 
 	private async fetchAgentWorkflowsAsModels(user: User): Promise<ChatModelDto[]> {

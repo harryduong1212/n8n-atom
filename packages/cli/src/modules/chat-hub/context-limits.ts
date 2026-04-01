@@ -204,6 +204,8 @@ export const maxContextWindowTokens: Record<ChatHubLLMProvider, Record<string, n
 		'mistral-small-2506': 128000,
 		'mistral-small-latest': 128000,
 	},
+	// Cursor Agent routes to multiple backends; limits are backend-specific — omit per-model caps.
+	cursorAgent: {},
 };
 
 const CONTEXT_WINDOW_SAFETY_FACTOR = 0.95;
