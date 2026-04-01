@@ -30,7 +30,6 @@
       "dist/credentials/AzureOpenAiApi.credentials.js",
       "dist/credentials/AzureEntraCognitiveServicesOAuth2Api.credentials.js",
       "dist/credentials/CohereApi.credentials.js",
-      "dist/credentials/CursorAgentApi.credentials.js",
       "dist/credentials/DeepSeekApi.credentials.js",
       "dist/credentials/GooglePalmApi.credentials.js",
       "dist/credentials/GroqApi.credentials.js",

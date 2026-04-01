@@ -1,4 +1,6 @@
-import { ChatOpenAI, type ClientOptions } from '@langchain/openai';
+import { SimpleChatModel } from '@langchain/core/language_models/chat_models';
+import type { BaseMessage } from '@langchain/core/messages';
+import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import {
 	NodeConnectionTypes,
 	type INodeType,
@@ -7,13 +9,141 @@ import {
 	type SupplyData,
 } from 'n8n-workflow';
 
-import { getProxyAgent } from '@utils/httpProxyAgent';
 import { getConnectionHintNoticeField } from '@utils/sharedFields';
 
-import type { OpenAICompatibleCredential } from '../../../types/types';
-import { openAiFailedAttemptHandler } from '../../vendors/OpenAi/helpers/error-handling';
-import { makeN8nLlmFailedAttemptHandler } from '../n8nLlmFailedAttemptHandler';
 import { N8nLlmTracing } from '../N8nLlmTracing';
+import { spawn } from 'child_process';
+
+interface CursorAgentFields {
+	model: string;
+	binaryPath: string;
+	workingDirectory: string;
+}
+
+/**
+ * Custom LangChain chat model that wraps the cursor-agent CLI binary.
+ * Spawns cursor-agent as a subprocess, passes the prompt via stdin,
+ * and parses the stream-json output to extract the assistant response.
+ */
+class ChatCursorAgentCLI extends SimpleChatModel {
+	model: string;
+
+	binaryPath: string;
+
+	workingDirectory: string;
+
+	constructor(fields: CursorAgentFields) {
+		super({});
+		this.model = fields.model;
+		this.binaryPath = fields.binaryPath;
+		this.workingDirectory = fields.workingDirectory;
+	}
+
+	_llmType(): string {
+		return 'cursor-agent-cli';
+	}
+
+	async _call(
+		messages: BaseMessage[],
+		_options: this['ParsedCallOptions'],
+		_runManager?: CallbackManagerForLLMRun,
+	): Promise<string> {
+		// Build prompt from messages — use the last human message as primary prompt
+		const prompt = messages
+			.map((m) => {
+				const role = m._getType();
+				const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+				return `[${role}]: ${content}`;
+			})
+			.join('\n\n');
+
+		// Build cursor-agent command args
+		const args = ['-p', '--output-format=stream-json', '--trust'];
+		if (this.model && this.model !== 'auto') {
+			args.push('--model', this.model);
+		}
+
+		return await new Promise<string>((resolve, reject) => {
+			const child = spawn(this.binaryPath, args, {
+				cwd: this.workingDirectory || undefined,
+				stdio: ['pipe', 'pipe', 'pipe'],
+				env: { ...process.env },
+			});
+
+			let stdout = '';
+			let stderr = '';
+
+			child.stdout.on('data', (data: Buffer) => {
+				stdout += data.toString();
+			});
+
+			child.stderr.on('data', (data: Buffer) => {
+				stderr += data.toString();
+			});
+
+			child.on('error', (err: Error) => {
+				reject(
+					new Error(
+						`Failed to spawn cursor-agent: ${err.message}. Make sure cursor-agent CLI is installed and accessible.`,
+					),
+				);
+			});
+
+			child.on('close', (code: number | null) => {
+				if (code !== 0 && !stdout) {
+					const errorMsg = stderr.trim() || `cursor-agent exited with code ${code}`;
+					reject(new Error(errorMsg));
+					return;
+				}
+
+				// Parse stream-json output lines to extract assistant messages
+				const assistantContent = this.parseStreamJsonOutput(stdout);
+
+				if (!assistantContent) {
+					reject(new Error('No assistant response received from cursor-agent'));
+					return;
+				}
+
+				resolve(assistantContent);
+			});
+
+			// Write prompt to stdin and close it
+			if (child.stdin) {
+				child.stdin.write(prompt);
+				child.stdin.end();
+			}
+		});
+	}
+
+	private parseStreamJsonOutput(output: string): string {
+		const lines = output.split('\n').filter((line) => line.trim());
+		const assistantParts: string[] = [];
+
+		for (const line of lines) {
+			try {
+				const parsed = JSON.parse(line) as {
+					type?: string;
+					message?: {
+						content?: Array<{ type?: string; text?: string }>;
+					};
+					text?: string;
+				};
+
+				if (parsed.type === 'assistant' && parsed.message?.content) {
+					for (const item of parsed.message.content) {
+						if (item.type === 'text' && item.text) {
+							assistantParts.push(item.text);
+						}
+					}
+				}
+			} catch {
+				// Skip non-JSON lines
+			}
+		}
+
+		return assistantParts.join('');
+	}
+}
 
 export class LmChatCursorAgent implements INodeType {
 	description: INodeTypeDescription = {
@@ -23,7 +153,8 @@ export class LmChatCursorAgent implements INodeType {
 		icon: 'file:cursorAgent.svg',
 		group: ['transform'],
 		version: [1],
-		description: 'Chat model using Cursor Agent CLI for advanced usage with an AI chain',
+		description:
+			'Chat model powered by the Cursor Agent CLI. Requires cursor-agent to be installed locally.',
 		defaults: {
 			name: 'Cursor Agent CLI Chat Model',
 		},
@@ -40,36 +171,14 @@ export class LmChatCursorAgent implements INodeType {
 
 		outputs: [NodeConnectionTypes.AiLanguageModel],
 		outputNames: ['Model'],
-		credentials: [
-			{
-				name: 'cursorAgentApi',
-				required: true,
-			},
-		],
-		requestDefaults: {
-			ignoreHttpStatusErrors: true,
-			baseURL: '={{ $credentials?.url }}',
-		},
 		properties: [
 			getConnectionHintNoticeField([NodeConnectionTypes.AiChain, NodeConnectionTypes.AiAgent]),
-			{
-				displayName:
-					'If using JSON response format, you must include word "json" in the prompt in your chain or agent.',
-				name: 'notice',
-				type: 'notice',
-				default: '',
-				displayOptions: {
-					show: {
-						'/options.responseFormat': ['json_object'],
-					},
-				},
-			},
 			{
 				displayName: 'Model',
 				name: 'model',
 				type: 'options',
-				description:
-					'The model which will generate the completion. Models available through Cursor Agent CLI.',
+				description: 'The model to use via cursor-agent CLI.',
+				// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
 				options: [
 					{ name: 'Auto', value: 'auto' },
 					{ name: 'Composer 1', value: 'composer-1' },
@@ -86,101 +195,31 @@ export class LmChatCursorAgent implements INodeType {
 					{ name: 'Sonnet 4.5', value: 'sonnet-4.5' },
 					{ name: 'Sonnet 4.5 Thinking', value: 'sonnet-4.5-thinking' },
 				],
-				routing: {
-					send: {
-						type: 'body',
-						property: 'model',
-					},
-				},
 				default: 'auto',
 			},
 			{
 				displayName: 'Options',
 				name: 'options',
 				placeholder: 'Add Option',
-				description: 'Additional options to add',
+				description: 'Additional options to configure',
 				type: 'collection',
 				default: {},
 				options: [
 					{
-						displayName: 'Frequency Penalty',
-						name: 'frequencyPenalty',
-						default: 0,
-						typeOptions: { maxValue: 2, minValue: -2, numberPrecision: 1 },
+						displayName: 'Binary Path',
+						name: 'binaryPath',
+						default: 'cursor-agent',
 						description:
-							"Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim",
-						type: 'number',
+							'Path to the cursor-agent binary. Defaults to "cursor-agent" (must be in PATH).',
+						type: 'string',
 					},
 					{
-						displayName: 'Maximum Number of Tokens',
-						name: 'maxTokens',
-						default: -1,
+						displayName: 'Working Directory',
+						name: 'workingDirectory',
+						default: '',
 						description:
-							'The maximum number of tokens to generate in the completion. Most models have a context length of 2048 tokens (except for the newest models, which support 32,768).',
-						type: 'number',
-						typeOptions: {
-							maxValue: 32768,
-						},
-					},
-					{
-						displayName: 'Response Format',
-						name: 'responseFormat',
-						default: 'text',
-						type: 'options',
-						options: [
-							{
-								name: 'Text',
-								value: 'text',
-								description: 'Regular text response',
-							},
-							{
-								name: 'JSON',
-								value: 'json_object',
-								description:
-									'Enables JSON mode, which should guarantee the message the model generates is valid JSON',
-							},
-						],
-					},
-					{
-						displayName: 'Presence Penalty',
-						name: 'presencePenalty',
-						default: 0,
-						typeOptions: { maxValue: 2, minValue: -2, numberPrecision: 1 },
-						description:
-							"Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics",
-						type: 'number',
-					},
-					{
-						displayName: 'Sampling Temperature',
-						name: 'temperature',
-						default: 0.7,
-						typeOptions: { maxValue: 2, minValue: 0, numberPrecision: 1 },
-						description:
-							'Controls randomness: Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.',
-						type: 'number',
-					},
-					{
-						displayName: 'Timeout',
-						name: 'timeout',
-						default: 360000,
-						description: 'Maximum amount of time a request is allowed to take in milliseconds',
-						type: 'number',
-					},
-					{
-						displayName: 'Max Retries',
-						name: 'maxRetries',
-						default: 2,
-						description: 'Maximum number of retries to attempt',
-						type: 'number',
-					},
-					{
-						displayName: 'Top P',
-						name: 'topP',
-						default: 1,
-						typeOptions: { maxValue: 1, minValue: 0, numberPrecision: 1 },
-						description:
-							'Controls diversity via nucleus sampling: 0.5 means half of all likelihood-weighted options are considered. We generally recommend altering this or temperature but not both.',
-						type: 'number',
+							'Working directory for the cursor-agent process. Leave empty to use the default.',
+						type: 'string',
 					},
 				],
 			},
@@ -188,43 +227,21 @@ export class LmChatCursorAgent implements INodeType {
 	};
 
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
-		const credentials = await this.getCredentials<OpenAICompatibleCredential>('cursorAgentApi');
-
 		const modelName = this.getNodeParameter('model', itemIndex) as string;
 
 		const options = this.getNodeParameter('options', itemIndex, {}) as {
-			frequencyPenalty?: number;
-			maxTokens?: number;
-			maxRetries: number;
-			timeout: number;
-			presencePenalty?: number;
-			temperature?: number;
-			topP?: number;
-			responseFormat?: 'text' | 'json_object';
+			binaryPath?: string;
+			workingDirectory?: string;
 		};
 
-		const configuration: ClientOptions = {
-			baseURL: credentials.url,
-			fetchOptions: {
-				dispatcher: getProxyAgent(credentials.url),
-			},
-		};
-
-		const model = new ChatOpenAI({
-			apiKey: credentials.apiKey,
+		const model = new ChatCursorAgentCLI({
 			model: modelName,
-			...options,
-			timeout: options.timeout ?? 60000,
-			maxRetries: options.maxRetries ?? 2,
-			configuration,
-			callbacks: [new N8nLlmTracing(this)],
-			modelKwargs: options.responseFormat
-				? {
-						response_format: { type: options.responseFormat },
-					}
-				: undefined,
-			onFailedAttempt: makeN8nLlmFailedAttemptHandler(this, openAiFailedAttemptHandler),
+			binaryPath: options.binaryPath ?? 'cursor-agent',
+			workingDirectory: options.workingDirectory ?? '',
 		});
+
+		// Attach tracing callback
+		model.callbacks = [new N8nLlmTracing(this)];
 
 		return {
 			response: model,
