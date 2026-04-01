@@ -1,6 +1,9 @@
-import { SimpleChatModel } from '@langchain/core/language_models/chat_models';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { BaseMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
+import type { ChatResult } from '@langchain/core/outputs';
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
+import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import {
 	NodeConnectionTypes,
 	type INodeType,
@@ -20,17 +23,36 @@ interface CursorAgentFields {
 	workingDirectory: string;
 }
 
+interface ParsedToolCall {
+	id: string;
+	name: string;
+	args: Record<string, unknown>;
+}
+
+const TOOL_CALL_SYSTEM_PROMPT = `You have access to the following tools. When you need to call a tool, respond ONLY with a JSON block in this exact format (no other text before or after):
+
+\`\`\`tool_calls
+[{"id": "call_1", "name": "tool_name", "args": {"param": "value"}}]
+\`\`\`
+
+When you do NOT need to call a tool, respond normally with text. Never mix tool calls and text in the same response.
+
+Available tools:
+`;
+
 /**
  * Custom LangChain chat model that wraps the cursor-agent CLI binary.
- * Spawns cursor-agent as a subprocess, passes the prompt via stdin,
- * and parses the stream-json output to extract the assistant response.
+ * Supports tool calling by injecting tool schemas into the prompt
+ * and parsing structured JSON responses for tool calls.
  */
-class ChatCursorAgentCLI extends SimpleChatModel {
+class ChatCursorAgentCLI extends BaseChatModel {
 	model: string;
 
 	binaryPath: string;
 
 	workingDirectory: string;
+
+	boundTools: BindToolsInput[] = [];
 
 	constructor(fields: CursorAgentFields) {
 		super({});
@@ -43,21 +65,108 @@ class ChatCursorAgentCLI extends SimpleChatModel {
 		return 'cursor-agent-cli';
 	}
 
-	async _call(
+	override bindTools(tools: BindToolsInput[], kwargs?: Partial<this['ParsedCallOptions']>) {
+		const clone = new ChatCursorAgentCLI({
+			model: this.model,
+			binaryPath: this.binaryPath,
+			workingDirectory: this.workingDirectory,
+		});
+		clone.boundTools = tools;
+		clone.callbacks = this.callbacks;
+		if (kwargs) {
+			return clone.bind(kwargs);
+		}
+		return clone;
+	}
+
+	async _generate(
 		messages: BaseMessage[],
 		_options: this['ParsedCallOptions'],
 		_runManager?: CallbackManagerForLLMRun,
-	): Promise<string> {
-		// Build prompt from messages — use the last human message as primary prompt
-		const prompt = messages
+	): Promise<ChatResult> {
+		// If tools are bound, inject tool schemas into a system message
+		const processedMessages = [...messages];
+		if (this.boundTools.length > 0) {
+			const toolDescriptions = this.boundTools
+				.map((tool) => {
+					const t = tool as Record<string, unknown>;
+					const name = (t.name as string) ?? '';
+					const description = (t.description as string) ?? '';
+					const schema = t.parameters ?? t.schema ?? {};
+					return `- ${name}: ${description}\n  Parameters: ${JSON.stringify(schema)}`;
+				})
+				.join('\n\n');
+
+			const systemPrompt = TOOL_CALL_SYSTEM_PROMPT + toolDescriptions;
+			processedMessages.unshift(new SystemMessage(systemPrompt));
+		}
+
+		// Build prompt from messages
+		const prompt = processedMessages
 			.map((m) => {
-				const role = m._getType();
 				const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-				return `[${role}]: ${content}`;
+				if (m instanceof SystemMessage) return `[system]: ${content}`;
+				if (m instanceof HumanMessage) return `[user]: ${content}`;
+				if (m instanceof AIMessage) return `[assistant]: ${content}`;
+				return `[${m._getType()}]: ${content}`;
 			})
 			.join('\n\n');
 
-		// Build cursor-agent command args
+		// Execute cursor-agent CLI
+		const rawResponse = await this.executeCursorAgent(prompt);
+
+		// Check for tool calls in response
+		if (this.boundTools.length > 0) {
+			const toolCalls = this.extractToolCalls(rawResponse);
+			if (toolCalls.length > 0) {
+				const aiMessage = new AIMessage({
+					content: '',
+					tool_calls: toolCalls.map((tc) => ({
+						id: tc.id,
+						name: tc.name,
+						args: tc.args,
+						type: 'tool_call' as const,
+					})),
+				});
+
+				return {
+					generations: [{ message: aiMessage, text: '' }],
+				};
+			}
+		}
+
+		// Normal text response
+		const aiMessage = new AIMessage({ content: rawResponse });
+		return {
+			generations: [{ message: aiMessage, text: rawResponse }],
+		};
+	}
+
+	private extractToolCalls(text: string): ParsedToolCall[] {
+		// Look for tool_calls JSON block
+		const toolCallRegex = /```tool_calls\s*\n([\s\S]*?)\n```/;
+		const match = toolCallRegex.exec(text);
+		if (!match) return [];
+
+		try {
+			const parsed = JSON.parse(match[1]) as Array<{
+				id?: string;
+				name: string;
+				args: Record<string, unknown>;
+			}>;
+			if (!Array.isArray(parsed)) return [];
+
+			return parsed.map((tc, i) => ({
+				id: tc.id ?? `call_${i}`,
+				name: tc.name,
+				args: tc.args ?? {},
+			}));
+		} catch {
+			return [];
+		}
+	}
+
+	private async executeCursorAgent(prompt: string): Promise<string> {
 		const args = ['-p', '--output-format=stream-json', '--trust'];
 		if (this.model && this.model !== 'auto') {
 			args.push('--model', this.model);
@@ -96,7 +205,6 @@ class ChatCursorAgentCLI extends SimpleChatModel {
 					return;
 				}
 
-				// Parse stream-json output lines to extract assistant messages
 				const assistantContent = this.parseStreamJsonOutput(stdout);
 
 				if (!assistantContent) {
@@ -107,7 +215,6 @@ class ChatCursorAgentCLI extends SimpleChatModel {
 				resolve(assistantContent);
 			});
 
-			// Write prompt to stdin and close it
 			if (child.stdin) {
 				child.stdin.write(prompt);
 				child.stdin.end();
@@ -240,7 +347,6 @@ export class LmChatCursorAgent implements INodeType {
 			workingDirectory: options.workingDirectory ?? '',
 		});
 
-		// Attach tracing callback
 		model.callbacks = [new N8nLlmTracing(this)];
 
 		return {
