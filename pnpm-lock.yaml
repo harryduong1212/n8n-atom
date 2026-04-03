@@ -205,7 +205,7 @@ overrides:
   multer: ^2.0.2
   prebuild-install: 7.1.3
   pug: ^3.0.3
-  semver: ^7.5.4
+  semver: ^7.6.3
   tar-fs: 2.1.4
   tslib: ^2.6.2
   tsconfig-paths: ^4.2.0
@@ -1348,8 +1348,8 @@ importers:
         specifier: 'catalog:'
         version: 3.2.12
       semver:
-        specifier: ^7.5.4
-        version: 7.7.2
+        specifier: ^7.6.3
+        version: 7.7.3
       tmp:
         specifier: 0.2.4
         version: 0.2.4
@@ -1724,8 +1724,8 @@ importers:
         specifier: 2.10.0
         version: 2.10.0
       semver:
-        specifier: ^7.5.4
-        version: 7.6.0
+        specifier: ^7.6.3
+        version: 7.7.3
       shelljs:
         specifier: 0.8.5
         version: 0.8.5
@@ -2710,8 +2710,8 @@ importers:
         specifier: ^3.3.4
         version: 3.3.4(vue@3.5.13(typescript@5.9.2))
       semver:
-        specifier: ^7.5.4
-        version: 7.7.2
+        specifier: ^7.6.3
+        version: 7.7.3
       stream-browserify:
         specifier: ^3.0.0
         version: 3.0.0
@@ -3116,8 +3116,8 @@ importers:
         specifier: 2.12.1
         version: 2.12.1
       semver:
-        specifier: ^7.5.4
-        version: 7.6.0
+        specifier: ^7.6.3
+        version: 7.7.3
       showdown:
         specifier: 2.1.0
         version: 2.1.0
@@ -16340,11 +16340,6 @@ packages:
   selderee@0.11.0:
     resolution: {integrity: sha512-5TF+l7p4+OsnP8BCCvSyZiSPc4x4//p5uPwK8TCnVPJYRmU2aYKMpOXvw8zM5a5JvuuCGN1jmsMwuU2W02ukfA==}
 
-  semver@7.6.0:
-    resolution: {integrity: sha512-EnwXhrlwXMk9gKu5/flx5sv/an57AkRplG3hTK68W7FRDN+k+OWBj65M7719OkA82XLBxrcX0KSHj+X5COhOVg==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   semver@7.7.2:
     resolution: {integrity: sha512-RF0Fw+rO5AMf9MAyaRXI4AV0Ulj5lMHqVxxdSgiVbixSCXoEmmX/jk0CuJw4+3SqroYO9VoUh+HcuJivvtJemA==}
     engines: {node: '>=10'}
@@ -21713,7 +21708,7 @@ snapshots:
   '@getzep/zep-js@0.9.0':
     dependencies:
       '@supercharge/promise-pool': 3.1.0
-      semver: 7.6.0
+      semver: 7.7.3
       typescript: 5.9.2
 
   '@google-cloud/paginator@5.0.2':
@@ -23483,7 +23478,7 @@ snapshots:
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
       redoc: 2.4.0(core-js@3.40.0)(encoding@0.1.13)(mobx@6.12.0)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)(styled-components@6.1.8(react-dom@18.2.0(react@18.2.0))(react@18.2.0))
-      semver: 7.7.2
+      semver: 7.7.3
       simple-websocket: 9.1.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       styled-components: 6.1.8(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       yargs: 17.0.1
@@ -27238,7 +27233,7 @@ snapshots:
       ioredis: 5.3.2
       lodash: 4.17.21
       msgpackr: 1.11.2
-      semver: 7.7.2
+      semver: 7.7.3
       uuid: 8.3.2
     transitivePeerDependencies:
       - supports-color
@@ -30475,7 +30470,7 @@ snapshots:
       fengari: 0.1.4
       fengari-interop: 0.1.3(fengari@0.1.4)
       ioredis: 5.3.2
-      semver: 7.7.2
+      semver: 7.7.3
 
   ioredis@5.3.2:
     dependencies:
@@ -31941,7 +31936,7 @@ snapshots:
       mkdirp: 0.5.6
       nopt: 4.0.3
       read-installed: 4.0.3
-      semver: 7.7.2
+      semver: 7.7.3
       spdx-correct: 3.2.0
       spdx-expression-parse: 3.0.1
       spdx-satisfies: 4.0.1
@@ -32142,6 +32137,7 @@ snapshots:
   lru-cache@6.0.0:
     dependencies:
       yallist: 4.0.0
+    optional: true
 
   lru-cache@7.18.3: {}
 
@@ -33179,7 +33175,7 @@ snapshots:
       ignore-by-default: 1.0.1
       minimatch: 3.1.2
       pstree.remy: 1.1.8
-      semver: 7.7.2
+      semver: 7.7.3
       simple-update-notifier: 2.0.0
       supports-color: 5.5.0
       touch: 3.1.0
@@ -35035,10 +35031,6 @@ snapshots:
     dependencies:
       parseley: 0.12.1
 
-  semver@7.6.0:
-    dependencies:
-      lru-cache: 6.0.0
-
   semver@7.7.2: {}
 
   semver@7.7.3: {}
@@ -35554,7 +35546,7 @@ snapshots:
       esbuild: 0.25.9
       esbuild-register: 3.5.0(esbuild@0.25.9)
       recast: 0.23.6
-      semver: 7.7.2
+      semver: 7.7.3
       ws: 8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
     optionalDependencies:
       prettier: 3.3.3
@@ -35578,7 +35570,7 @@ snapshots:
       esbuild: 0.25.9
       esbuild-register: 3.5.0(esbuild@0.25.9)
       recast: 0.23.6
-      semver: 7.7.2
+      semver: 7.7.3
       ws: 8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
     optionalDependencies:
       prettier: 3.6.2
@@ -36270,7 +36262,7 @@ snapshots:
       json5: 2.2.3
       lodash.memoize: 4.1.2
       make-error: 1.3.6
-      semver: 7.7.2
+      semver: 7.7.3
       typescript: 5.9.2
       yargs-parser: 21.1.1
     optionalDependencies:
